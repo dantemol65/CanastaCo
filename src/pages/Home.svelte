@@ -1,12 +1,13 @@
 <script>
-  import { currentUser, userProfile, currentPage } from '../stores/auth.js'
+  import { currentUser, userProfile, currentPage, pendingSync, syncPendingProfile } from '../stores/auth.js'
+  import { cargarFotoCacheada } from '../lib/fotocache.js'
   import BottomNav from '../components/BottomNav.svelte'
 
   $: user    = $currentUser
   $: profile = $userProfile
 
   $: displayName  = profile?.alias || user?.displayName?.split(' ')[0] || 'Usuario'
-  $: displayPhoto = profile?.foto  || user?.photoURL || ''
+  $: displayPhoto = profile?.foto  || user?.photoURL || cargarFotoCacheada() || ''
   $: localidad    = profile?.localidad
     ? profile.localidad.split('-').pop()  // ID final, mejoramos con datos reales
     : 'tu localidad'
@@ -90,6 +91,16 @@
     </div>
   </header>
 
+  {#if $pendingSync}
+    <button class="sync-banner" on:click={syncPendingProfile}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      Cambios guardados localmente · Tocá para sincronizar
+    </button>
+  {/if}
+
   <!-- Scroll area -->
   <div class="scroll-area home-scroll">
     <div class="home-content fade-in">
@@ -164,6 +175,20 @@
   }
 
   /* ── Header ── */
+  .sync-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #FFF8E1;
+    color: #E65100;
+    font-size: 0.78rem;
+    font-weight: 500;
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 1px solid #FFE082;
+  }
+  .sync-banner:hover { background: #FFF3CD; }
+
   .home-header {
     position: sticky; top: 0; z-index: 20;
     background: var(--c-primary);

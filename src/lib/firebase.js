@@ -1,9 +1,7 @@
 // lib/firebase.js
-// Inicialización de Firebase con persistencia offline para Firestore
-
 import { initializeApp } from 'firebase/app'
-import { getAuth, GoogleAuthProvider } from 'firebase/auth'
-import { initializeFirestore, persistentLocalCache } from 'firebase/firestore'
+import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
 
 const firebaseConfig = {
   apiKey:            import.meta.env.VITE_FIREBASE_API_KEY,
@@ -14,17 +12,16 @@ const firebaseConfig = {
   appId:             import.meta.env.VITE_FIREBASE_APP_ID,
 }
 
-const app = initializeApp(firebaseConfig)
+const app  = initializeApp(firebaseConfig)
+const auth = getAuth(app)
+const db   = getFirestore(app)
 
-// Auth con proveedor Google
-export const auth = getAuth(app)
-export const googleProvider = new GoogleAuthProvider()
+const googleProvider = new GoogleAuthProvider()
 googleProvider.setCustomParameters({ prompt: 'select_account' })
 
-// Firestore con caché local persistente (offline por defecto)
-// En Firebase v10, persistentLocalCache habilita IndexedDB automáticamente
-export const db = initializeFirestore(app, {
-  localCache: persistentLocalCache()
-})
+export function googleSignInPopup()      { return signInWithPopup(auth, googleProvider) }
+export function googleSignInRedirect()   { return signInWithRedirect(auth, googleProvider) }
+export function getGoogleRedirectResult(){ return getRedirectResult(auth) }
 
+export { auth, db }
 export default app

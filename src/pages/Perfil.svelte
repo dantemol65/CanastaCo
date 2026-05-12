@@ -1,49 +1,92 @@
 <script>
-  import { currentUser, saveUserProfile, signOut } from '../stores/auth.js'
-  import {
-    provincias,
-    getDepartamentos,
-    getLocalidades
-  } from '../data/argentina.js'
+  import { currentUser, userProfile, currentPage, saveUserProfile, signOut } from '../stores/auth.js'
+  import { cargarFotoCacheada } from '../lib/fotocache.js'
+  import { provincias, getDepartamentos, getLocalidades, getNombreProvincia } from '../lib/georef.js'
+  import BottomNav from '../components/BottomNav.svelte'
 
   // ── Form state ────────────────────────────────────────────────────────────
-  let alias         = ''
-  let provinciaId   = ''
+  let alias          = ''
+  let provinciaId    = ''
   let departamentoId = ''
-  let localidadId   = ''
-  let barrio        = ''
-  let fotoCustom    = ''  // por ahora usa la de Google
+  let localidadId    = ''
+  let barrio         = ''
+  let fotoCustom     = ''
 
-  let departamentos = []
-  let localidades   = []
+  let saving        = false
+  let errors        = {}
+  let loaded        = false
 
-  let saving  = false
-  let errors  = {}
+  // ── Listas dinámicas ──────────────────────────────────────────────────────
+  let departamentos     = []
+  let localidades       = []
+  let loadingDepts      = false
+  let loadingLocs       = false
+  let errorDepts        = false
+  let errorLocs         = false
 
-  // ── Cascading selectors ───────────────────────────────────────────────────
-  $: {
-    if (provinciaId) {
-      departamentos = getDepartamentos(provinciaId)
-      departamentoId = ''
-      localidadId   = ''
-      localidades   = []
+  // ── Precargar perfil guardado ─────────────────────────────────────────────
+  import { onMount } from 'svelte'
+
+  onMount(() => {
+    if ($userProfile && !loaded) {
+      loaded         = true
+      alias          = $userProfile.alias  || ''
+      barrio         = $userProfile.barrio || ''
+      provinciaId    = $userProfile.provincia    || ''
+      departamentoId = $userProfile.departamento || ''
+      localidadId    = $userProfile.localidad    || ''
+      if (provinciaId)    cargarDepartamentos(provinciaId,    false)
+      if (departamentoId) cargarLocalidades(departamentoId, false)
+    }
+  })
+
+  // ── Cascading: el usuario cambia provincia ────────────────────────────────
+  async function onProvinciaChange() {
+    departamentoId = ''
+    localidadId    = ''
+    departamentos  = []
+    localidades    = []
+    if (provinciaId) await cargarDepartamentos(provinciaId, true)
+  }
+
+  async function onDepartamentoChange() {
+    localidadId = ''
+    localidades = []
+    if (departamentoId) await cargarLocalidades(departamentoId, true)
+  }
+
+  async function cargarDepartamentos(provId, resetOnError = true) {
+    loadingDepts = true
+    errorDepts   = false
+    try {
+      departamentos = await getDepartamentos(provId)
+    } catch {
+      errorDepts = true
+      if (resetOnError) departamentoId = ''
+    } finally {
+      loadingDepts = false
     }
   }
 
-  $: {
-    if (departamentoId) {
-      localidades = getLocalidades(departamentoId)
-      localidadId = ''
+  async function cargarLocalidades(deptId, resetOnError = true) {
+    loadingLocs = true
+    errorLocs   = false
+    try {
+      localidades = await getLocalidades(deptId)
+    } catch {
+      errorLocs = true
+      if (resetOnError) localidadId = ''
+    } finally {
+      loadingLocs = false
     }
   }
 
   // ── User data ─────────────────────────────────────────────────────────────
   $: user       = $currentUser
-  $: fotoGoogle = user?.photoURL || ''
+  $: fotoGoogle = user?.photoURL || cargarFotoCacheada() || ''
   $: nombre     = user?.displayName || ''
 
-  // Precompletar alias con nombre de Google (sin apellido)
-  $: if (nombre && !alias) {
+  $: if (nombre && !alias && !$userProfile) {
     alias = nombre.split(' ')[0]
   }
 
@@ -56,14 +99,34 @@
       errors.provincia = 'Seleccioná tu provincia.'
     if (!departamentoId)
       errors.departamento = 'Seleccioná tu departamento o partido.'
-    if (!localidadId)
+    if (!localidadId && localidades.length > 0)
       errors.localidad = 'Seleccioná tu localidad.'
     return Object.keys(errors).length === 0
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
+
+  // Detecta si el usuario modificó algún campo respecto al perfil guardado
+  function hasChanges() {
+    if (!$userProfile) return true  // perfil nuevo → siempre guardar
+    return (
+      alias          !== ($userProfile.alias          || '') ||
+      provinciaId    !== ($userProfile.provincia       || '') ||
+      departamentoId !== ($userProfile.departamento    || '') ||
+      localidadId    !== ($userProfile.localidad       || '') ||
+      barrio         !== ($userProfile.barrio          || '')
+    )
+  }
+
   async function handleSubmit() {
     if (!validate() || saving) return
+
+    // Si el perfil ya existe y no hay cambios, volver al home directo
+    if ($userProfile && !hasChanges()) {
+      currentPage.set('home')
+      return
+    }
+
     saving = true
     try {
       await saveUserProfile({
@@ -194,7 +257,8 @@
         <!-- Provincia -->
         <div class="form-group" class:has-error={errors.provincia}>
           <label class="form-label" for="provincia">Provincia</label>
-          <select id="provincia" class="form-select" class:error={errors.provincia} bind:value={provinciaId}>
+          <select id="provincia" class="form-select" class:error={errors.provincia}
+            bind:value={provinciaId} on:change={onProvinciaChange}>
             <option value="">Seleccioná tu provincia…</option>
             {#each provincias as prov}
               <option value={prov.id}>{prov.nombre}</option>
@@ -208,16 +272,27 @@
         <!-- Departamento / Partido -->
         <div class="form-group" class:has-error={errors.departamento}>
           <label class="form-label" for="departamento">
-            {provinciaId === 'AR-B' ? 'Partido' : 'Departamento / Comuna'}
+            {provinciaId === '06' ? 'Partido' : 'Departamento / Partido'}
           </label>
           <select
             id="departamento"
             class="form-select"
             class:error={errors.departamento}
             bind:value={departamentoId}
-            disabled={!provinciaId || departamentos.length === 0}
+            on:change={onDepartamentoChange}
+            disabled={!provinciaId || loadingDepts}
           >
-            <option value="">{provinciaId ? 'Seleccioná…' : 'Primero elegí provincia'}</option>
+            <option value="">
+              {#if !provinciaId}
+                Primero elegí provincia
+              {:else if loadingDepts}
+                Cargando…
+              {:else if errorDepts}
+                Error al cargar — revisá conexión
+              {:else}
+                Seleccioná…
+              {/if}
+            </option>
             {#each departamentos as dept}
               <option value={dept.id}>{dept.nombre}</option>
             {/each}
@@ -235,13 +310,17 @@
             class="form-select"
             class:error={errors.localidad}
             bind:value={localidadId}
-            disabled={!departamentoId || localidades.length === 0}
+            disabled={!departamentoId || loadingLocs}
           >
             <option value="">
               {#if !departamentoId}
                 Primero elegí departamento
+              {:else if loadingLocs}
+                Cargando…
+              {:else if errorLocs}
+                Error al cargar — revisá conexión
               {:else if localidades.length === 0}
-                Escribí en Barrio (sin datos aún)
+                Sin localidades registradas
               {:else}
                 Seleccioná tu localidad…
               {/if}
@@ -295,20 +374,28 @@
         {#if saving}
           <div class="btn-spinner-w"></div>
           Guardando…
+        {:else if $userProfile && !hasChanges()}
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          Volver al inicio
         {:else}
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <polyline points="20 6 9 17 4 12"/>
           </svg>
-          Listo, empezar
+          {$userProfile ? 'Guardar cambios' : 'Listo, empezar'}
         {/if}
       </button>
 
     </div>
   </div>
+
+  <BottomNav active="perfil" />
 </div>
 
 <style>
   .perfil-shell {
+    padding-bottom: var(--nav-h);
     background: var(--c-bg);
   }
 
