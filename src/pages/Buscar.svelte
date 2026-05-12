@@ -135,12 +135,14 @@
 
     {:else if $errorComercios}
       <div class="empty-state">
-        <div class="empty-icon">⚠️</div>
-        <p class="empty-title">Error al cargar</p>
+        <div class="empty-icon">{$errorComercios.includes('Sin conexión') ? '📵' : '⚠️'}</div>
+        <p class="empty-title">{$errorComercios.includes('Sin conexión') ? 'Sin conexión' : 'Error al cargar'}</p>
         <p class="empty-desc">{$errorComercios}</p>
-        <button class="btn btn-primary" on:click={() => cargarComerciosPorLocalidad(perfil.localidad)}>
-          Reintentar
-        </button>
+        {#if !$errorComercios.includes('Sin conexión')}
+          <button class="btn btn-primary" on:click={() => cargarComerciosPorLocalidad(perfil.localidad)}>
+            Reintentar
+          </button>
+        {/if}
       </div>
 
     {:else if lista.length === 0}

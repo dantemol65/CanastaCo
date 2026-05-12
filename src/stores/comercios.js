@@ -44,7 +44,7 @@ function loadCacheComerciosLocal(localidadId) {
     const raw = localStorage.getItem('canastaco_comercios_' + localidadId)
     if (!raw) return null
     const { ts, lista } = JSON.parse(raw)
-    if (Date.now() - ts > 30 * 60 * 1000) return null  // 30 min
+    if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) return null  // 7 días
     return lista
   } catch { return null }
 }

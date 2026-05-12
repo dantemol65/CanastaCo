@@ -21,6 +21,13 @@
 
   let seccion = 'notificaciones'  // notificaciones | comercios | usuarios | credencial
   let cargando = false
+  let offline  = !navigator.onLine
+
+  // Detectar cambios de conexión
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online',  () => offline = false)
+    window.addEventListener('offline', () => offline = true)
+  }
 
   // Datos
   let comerciosPendientes = []
@@ -46,18 +53,31 @@
   }
 
   async function cargarComerciosPendientes() {
-    const q = query(
-      collection(db, 'comercios'),
-      where('estado', '==', 'pendiente'),
-      orderBy('creadoEn', 'desc')
-    )
-    const snap = await getDocs(q)
-    comerciosPendientes = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    if (!navigator.onLine) { comerciosPendientes = []; return }
+    try {
+      const q = query(
+        collection(db, 'comercios'),
+        where('estado', '==', 'pendiente')
+      )
+      const snap = await getDocs(q)
+      comerciosPendientes = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (b.creadoEn?.toDate?.() || 0) - (a.creadoEn?.toDate?.() || 0))
+    } catch (e) {
+      console.error('cargarComerciosPendientes:', e)
+      comerciosPendientes = []
+    }
   }
 
   async function cargarUsuarios() {
-    const snap = await getDocs(collection(db, 'usuarios'))
-    usuariosLista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    if (!navigator.onLine) { usuariosLista = []; return }
+    try {
+      const snap = await getDocs(collection(db, 'usuarios'))
+      usuariosLista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    } catch (e) {
+      console.error('cargarUsuarios:', e)
+      usuariosLista = []
+    }
   }
 
   async function aprobarComercio(id, nombre) {
@@ -193,6 +213,12 @@
     {/each}
   </nav>
 
+  {#if offline}
+    <div class="offline-banner">
+      📵 Sin conexión — algunas funciones no están disponibles
+    </div>
+  {/if}
+
   <main class="admin-main">
 
     <!-- ── Notificaciones ────────────────────────────────────────────── -->
@@ -243,6 +269,11 @@
 
       {#if cargando}
         <div class="loading-msg">Cargando…</div>
+      {:else if offline}
+        <div class="empty-state">
+          <div class="empty-icon">📵</div>
+          <p>Sin conexión — no disponible offline</p>
+        </div>
       {:else if comerciosPendientes.length === 0}
         <div class="empty-state">
           <div class="empty-icon">✅</div>
@@ -279,6 +310,11 @@
 
       {#if cargando}
         <div class="loading-msg">Cargando…</div>
+      {:else if offline}
+        <div class="empty-state">
+          <div class="empty-icon">📵</div>
+          <p>Sin conexión — no disponible offline</p>
+        </div>
       {:else}
         <div class="items-lista">
           {#each usuariosLista as u (u.id)}
@@ -362,6 +398,16 @@
   .admin-shell {
     background: var(--c-bg);
     min-height: 100dvh;
+  }
+
+  .offline-banner {
+    background: #FEF3C7;
+    border-bottom: 1px solid #FDE68A;
+    color: #92400E;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    text-align: center;
   }
 
   /* Header */
