@@ -148,6 +148,8 @@
               class="module-card"
               class:module-available={mod.disponible}
               style="--mod-color: {mod.color}"
+              role={mod.disponible ? 'button' : undefined}
+              aria-label={mod.disponible ? 'Ir a ' + mod.titulo : undefined}
               on:click={() => mod.disponible && mod.pagina && currentPage.set(mod.pagina)}
             >
               <div class="module-icon">{mod.icon}</div>

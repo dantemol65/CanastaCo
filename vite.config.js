@@ -3,6 +3,18 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  build: {
+    charset: 'utf8',
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'firebase': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
+          'svelte':   ['svelte', 'svelte/store', 'svelte/transition'],
+        }
+      }
+    }
+  },
   resolve: {
     dedupe: ['firebase']
   },

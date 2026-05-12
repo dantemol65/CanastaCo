@@ -8,12 +8,12 @@ import { db } from '../lib/firebase.js'
 import { currentUser } from './auth.js'
 import { distanciaKm } from '../lib/geolocation.js'
 import { generarCodigo, hashearCodigo, verificarCodigo } from '../lib/credencial.js'
+import { crearNotificacion } from './notificaciones.js'
 
-// crearNotificacion se importa lazy para evitar dependencia circular
+const ADMIN_UID = 'CPDF0lCYKgf3dvoDX5YSC94r2Tm1'
+
 async function notificarAdmin(tipo, titulo, mensaje, datos = {}) {
-  const ADMIN_UID = 'CPDF0lCYKgf3dvoDX5YSC94r2Tm1'
   try {
-    const { crearNotificacion } = await import('./notificaciones.js')
     await crearNotificacion({ destinatario: ADMIN_UID, tipo, titulo, mensaje, datos })
   } catch (e) {
     console.error('notificarAdmin:', e)
@@ -22,7 +22,6 @@ async function notificarAdmin(tipo, titulo, mensaje, datos = {}) {
 
 async function notificarUsuario(uid, tipo, titulo, mensaje, datos = {}) {
   try {
-    const { crearNotificacion } = await import('./notificaciones.js')
     await crearNotificacion({ destinatario: uid, tipo, titulo, mensaje, datos })
   } catch (e) {
     console.error('notificarUsuario:', e)

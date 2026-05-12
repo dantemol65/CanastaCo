@@ -34,8 +34,13 @@ export async function verificarCodigo(codigoIngresado, hashGuardado) {
  * Requiere que jsPDF esté cargado
  */
 export async function generarPDFCredencial({ comercio, codigoPublico, codigoPrivado }) {
-  // Cargamos jsPDF dinámicamente
-  const { jsPDF } = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+  // Cargamos jsPDF dinámicamente desde CDN
+  // El módulo UMD puede exponer jsPDF de distintas formas según el bundler
+  const jspdfMod = await import('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js')
+  const jsPDF = jspdfMod.jsPDF
+    || jspdfMod.default?.jsPDF
+    || window.jspdf?.jsPDF
+  if (!jsPDF) throw new Error('No se pudo cargar jsPDF')
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a5' })
   const W = 148, H = 210  // A5 en mm
