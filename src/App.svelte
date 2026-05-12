@@ -1,16 +1,21 @@
 <script>
   import { onMount } from 'svelte'
   import { currentPage, initAuth } from './stores/auth.js'
-  import Login  from './pages/Login.svelte'
-  import Perfil from './pages/Perfil.svelte'
-  import Home   from './pages/Home.svelte'
+  import Login          from './pages/Login.svelte'
+  import Perfil         from './pages/Perfil.svelte'
+  import Home           from './pages/Home.svelte'
+  import Buscar         from './pages/Buscar.svelte'
+  import AltaComercio   from './pages/AltaComercio.svelte'
+  import DetalleComercio from './pages/DetalleComercio.svelte'
+  import Admin           from './pages/Admin.svelte'
 
-  onMount(() => {
-    initAuth()
-  })
+  onMount(() => { initAuth() })
+
+  // Extraer id de rutas con parámetros (ej: 'detalle-comercio:abc123')
+  $: [basePage, pageParam] = ($currentPage || '').split(':')
 </script>
 
-{#if $currentPage === 'loading'}
+{#if basePage === 'loading'}
   <div class="loading-screen">
     <svg width="52" height="52" viewBox="0 0 52 52" fill="none">
       <rect width="52" height="52" rx="14" fill="white" fill-opacity="0.15"/>
@@ -24,14 +29,26 @@
     <div class="spinner"></div>
   </div>
 
-{:else if $currentPage === 'login'}
+{:else if basePage === 'login'}
   <Login />
 
-{:else if $currentPage === 'perfil'}
+{:else if basePage === 'perfil'}
   <Perfil />
 
-{:else if $currentPage === 'home'}
+{:else if basePage === 'home'}
   <Home />
+
+{:else if basePage === 'buscar'}
+  <Buscar />
+
+{:else if basePage === 'alta-comercio'}
+  <AltaComercio />
+
+{:else if basePage === 'detalle-comercio'}
+  <DetalleComercio comercioId={pageParam} />
+
+{:else if basePage === 'admin'}
+  <Admin />
 
 {/if}
 

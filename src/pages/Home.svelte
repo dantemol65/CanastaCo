@@ -1,6 +1,8 @@
 <script>
   import { currentUser, userProfile, currentPage, pendingSync, syncPendingProfile } from '../stores/auth.js'
+  import { totalNoLeidas, cargarNotificaciones } from '../stores/notificaciones.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
+  import { onMount } from 'svelte'
   import BottomNav from '../components/BottomNav.svelte'
 
   $: user    = $currentUser
@@ -25,11 +27,12 @@
   const modulos = [
     {
       id: 2,
-      icon: '🔍',
-      titulo: 'Buscar productos',
-      desc: 'Encontrá el precio más bajo de un producto en tu zona.',
+      icon: '🏪',
+      titulo: 'Comercios y búsqueda',
+      desc: 'Explorá comercios de tu zona, verificalos y agregá nuevos.',
       color: '#1B6B3A',
-      disponible: false,
+      disponible: true,
+      pagina: 'buscar',
     },
     {
       id: 3,
@@ -41,25 +44,26 @@
     },
     {
       id: 4,
-      icon: '🏪',
-      titulo: 'Comercios',
-      desc: 'Registrá tu comercio y subí tu lista de precios.',
-      color: '#6A1B9A',
-      disponible: false,
-    },
-    {
-      id: 5,
       icon: '📊',
       titulo: 'Estadísticas',
       desc: 'Mirá cómo evolucionan los precios en tu barrio.',
       color: '#E65100',
       disponible: false,
     },
+    {
+      id: 5,
+      icon: '🤖',
+      titulo: 'Asistente IA',
+      desc: 'Cargá listas por voz o foto con ayuda de inteligencia artificial.',
+      color: '#6A1B9A',
+      disponible: false,
+    },
   ]
 
-  function goToPerfil() {
-    currentPage.set('perfil')
-  }
+  onMount(() => { cargarNotificaciones() })
+
+  function goToPerfil() { currentPage.set('perfil') }
+  function goAdmin()    { currentPage.set('admin') }
 </script>
 
 <div class="app-shell home-shell">
@@ -79,6 +83,14 @@
         {/if}
       </div>
 
+      {#if $userProfile?.rol === 'admin'}
+        <button class="btn-admin" on:click={goAdmin} aria-label="Panel admin">
+          ⚙️
+          {#if $totalNoLeidas > 0}
+            <span class="admin-notif-badge">{$totalNoLeidas}</span>
+          {/if}
+        </button>
+      {/if}
       <button class="avatar-btn" on:click={goToPerfil} aria-label="Mi perfil">
         {#if displayPhoto}
           <img src={displayPhoto} alt={displayName} class="avatar header-avatar" width="40" height="40" />
@@ -126,26 +138,39 @@
       <!-- Próximos módulos -->
       <section class="modules-section">
         <div class="section-header">
-          <h2 class="section-title">En desarrollo</h2>
-          <span class="badge badge-amber">Próximamente</span>
+          <h2 class="section-title">Módulos</h2>
         </div>
 
         <div class="modules-grid">
           {#each modulos as mod}
-            <div class="module-card" style="--mod-color: {mod.color}">
+            <svelte:element
+              this={mod.disponible ? 'button' : 'div'}
+              class="module-card"
+              class:module-available={mod.disponible}
+              style="--mod-color: {mod.color}"
+              on:click={() => mod.disponible && mod.pagina && currentPage.set(mod.pagina)}
+            >
               <div class="module-icon">{mod.icon}</div>
               <div class="module-info">
                 <div class="module-num">Módulo {mod.id}</div>
                 <div class="module-title">{mod.titulo}</div>
                 <p class="module-desc">{mod.desc}</p>
               </div>
-              <div class="module-lock" aria-label="No disponible aún">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                </svg>
-              </div>
-            </div>
+              {#if mod.disponible}
+                <div class="module-arrow">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </div>
+              {:else}
+                <div class="module-lock" aria-label="No disponible aún">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                  </svg>
+                </div>
+              {/if}
+            </svelte:element>
           {/each}
         </div>
       </section>
@@ -188,6 +213,35 @@
     border-bottom: 1px solid #FFE082;
   }
   .sync-banner:hover { background: #FFF3CD; }
+
+  .btn-admin {
+    position: relative;
+    background: rgba(255,255,255,0.2);
+    border: none;
+    border-radius: 10px;
+    width: 36px;
+    height: 36px;
+    font-size: 1rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .admin-notif-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: #EF4444;
+    color: white;
+    font-size: 0.55rem;
+    font-weight: 800;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
   .home-header {
     position: sticky; top: 0; z-index: 20;
@@ -341,6 +395,13 @@
     flex-direction: column;
     gap: 10px;
   }
+
+  .module-available {
+    cursor: pointer;
+    border-color: var(--mod-color) !important;
+  }
+  .module-available:active { transform: scale(0.97); }
+  .module-arrow { color: var(--mod-color); }
 
   .module-card {
     display: flex;

@@ -4,10 +4,9 @@
   import { currentPage } from '../stores/auth.js'
 
   function go(page) {
-    if (page === 'home' || page === 'perfil') {
+    if (page === 'home' || page === 'perfil' || page === 'buscar') {
       currentPage.set(page)
     }
-    // Los otros m贸dulos muestran un tooltip "pr贸ximamente"
   }
 
   let comingSoon = false
@@ -36,7 +35,7 @@
     {
       id: 'buscar',
       label: 'Buscar',
-      available: false,
+      available: true,
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="11" cy="11" r="8"/>
         <line x1="21" y1="21" x2="16.65" y2="16.65"/>
@@ -68,9 +67,9 @@
   ]
 </script>
 
-<nav class="bottom-nav" aria-label="Navegaci贸n principal">
+<nav class="bottom-nav" aria-label="Navegación principal">
   {#if comingSoon}
-    <div class="coming-soon-toast" role="status">馃毀 Pr贸ximamente</div>
+    <div class="coming-soon-toast" role="status">?? Próximamente</div>
   {/if}
 
   {#each tabs as tab}
@@ -154,7 +153,7 @@
     transition: color 0.15s;
   }
 
-  /* Indicador "pr贸ximamente" */
+  /* Indicador "próximamente" */
   .tab-dot {
     position: absolute;
     top: 8px; right: calc(50% - 14px);
