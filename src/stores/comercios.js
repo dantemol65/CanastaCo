@@ -29,6 +29,27 @@ async function notificarUsuario(uid, tipo, titulo, mensaje, datos = {}) {
   }
 }
 
+// ── Caché offline ────────────────────────────────────────────────────────
+
+function saveCacheComerciosLocal(localidadId, lista) {
+  try {
+    localStorage.setItem(
+      'canastaco_comercios_' + localidadId,
+      JSON.stringify({ ts: Date.now(), lista })
+    )
+  } catch {}
+}
+
+function loadCacheComerciosLocal(localidadId) {
+  try {
+    const raw = localStorage.getItem('canastaco_comercios_' + localidadId)
+    if (!raw) return null
+    const { ts, lista } = JSON.parse(raw)
+    if (Date.now() - ts > 30 * 60 * 1000) return null  // 30 min
+    return lista
+  } catch { return null }
+}
+
 export const comercios         = writable([])
 export const comercioActivo    = writable(null)
 export const cargandoComercios = writable(false)
@@ -61,6 +82,11 @@ export const ESTADOS = {
 export async function cargarComerciosPorLocalidad(localidadId) {
   cargandoComercios.set(true)
   errorComercios.set(null)
+
+  // Mostrar caché inmediatamente para que la UI no quede vacía offline
+  const cached = loadCacheComerciosLocal(localidadId)
+  if (cached) comercios.set(cached)
+
   try {
     const q = query(
       collection(db, 'comercios'),
@@ -76,11 +102,12 @@ export async function cargarComerciosPorLocalidad(localidadId) {
         return (b.reputacion || 0) - (a.reputacion || 0)
       })
     comercios.set(lista)
+    saveCacheComerciosLocal(localidadId, lista)
     return lista
   } catch (err) {
     console.error('cargarComerciosPorLocalidad:', err)
-    errorComercios.set('No se pudieron cargar los comercios.')
-    return []
+    if (!cached) errorComercios.set('Sin conexión — no hay datos guardados para esta localidad.')
+    return cached || []
   } finally {
     cargandoComercios.set(false)
   }
