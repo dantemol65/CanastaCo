@@ -5,7 +5,7 @@
     comercioActivo, cargarComercio, verificarComercio, reclamarConCodigo,
     TIPOS_COMERCIO, ESTADOS
   } from '../stores/comercios.js'
-  import { abrirMapa, formatDistancia, distanciaKm, obtenerPosicion } from '../lib/geolocation.js'
+  import { abrirMapa, formatDistancia, distanciaKm, obtenerPosicion, geocodificarDireccion } from '../lib/geolocation.js'
   import BottomNav from '../components/BottomNav.svelte'
 
   export let comercioId = ''
@@ -19,13 +19,13 @@
 
   $: comercio = $comercioActivo
   $: user     = $currentUser
-  $: tipoInfo = TIPOS_COMERCIO.find(t => t.id === comercio?.tipo) || { emoji: 'üè¨', label: comercio?.tipo }
+  $: tipoInfo = TIPOS_COMERCIO.find(t => t.id === comercio?.tipo) || { emoji: '??', label: comercio?.tipo }
   $: estadoInfo = ESTADOS[comercio?.estado] || ESTADOS.pendiente
   $: distancia = (posicion && comercio?.lat && comercio?.lng)
       ? distanciaKm(posicion.lat, posicion.lng, comercio.lat, comercio.lng)
       : null
 
-  // ¬øya verifiqu√© este comercio?
+  // øya verifiquÈ este comercio?
   $: if (comercio && user) {
     yaVerifique = comercio.verificaciones?.some(v => v.uid === user.uid) || false
   }
@@ -45,15 +45,15 @@
     try {
       await verificarComercio(comercioId)
       yaVerifique = true
-      showToast('¬°Gracias por verificar este comercio!')
+      showToast('°Gracias por verificar este comercio!')
     } catch (e) {
-      showToast('Error al verificar. Intent√° de nuevo.')
+      showToast('Error al verificar. Intent· de nuevo.')
     } finally {
       verificando = false
     }
   }
 
-  // Reclamo con c√≥digo privado
+  // Reclamo con cÛdigo privado
   let mostrarFormReclamo = false
   let codigoReclamo      = ''
   let reclamando         = false
@@ -72,7 +72,7 @@
     try {
       await reclamarConCodigo(comercioId, codigoReclamo)
       mostrarFormReclamo = false
-      showToast('¬°Comercio reclamado exitosamente! Sos el due√±o verificado.')
+      showToast('°Comercio reclamado exitosamente! Sos el dueÒo verificado.')
     } catch (e) {
       errorReclamo = e.message
     } finally {
@@ -83,6 +83,28 @@
   function showToast(msg) {
     toastMsg = msg
     setTimeout(() => toastMsg = '', 3000)
+  }
+
+  async function abrirMapaComercio() {
+    // Si tiene GPS: abrir directo
+    if (comercio.lat && comercio.lng) {
+      abrirMapa(comercio.lat, comercio.lng)
+      return
+    }
+    // Sin GPS: geocodificar primero con Nominatim
+    const prov = provincias.find(p => p.id === comercio.provincia)?.nombre || ''
+    const result = await geocodificarDireccion({
+      direccion: comercio.direccion,
+      localidad: contextoMapa.split(',')[0]?.trim() || '',
+      provincia: prov,
+    }).catch(() => null)
+
+    if (result) {
+      abrirMapa(result.lat, result.lng)
+    } else {
+      // Fallback: b˙squeda por texto con contexto
+      abrirMapa(null, null, comercio.nombre + ' ' + comercio.direccion, contextoMapa)
+    }
   }
 
   function volver() { currentPage.set('buscar') }
@@ -111,7 +133,7 @@
 
     {:else if error}
       <div class="empty-state">
-        <div class="empty-icon">‚ö†Ô∏è</div>
+        <div class="empty-icon">??</div>
         <p class="empty-title">{error}</p>
         <button class="btn btn-primary" on:click={volver}>Volver</button>
       </div>
@@ -139,7 +161,7 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
               </svg>
-              {formatDistancia(distancia)} de tu ubicaci√≥n
+              {formatDistancia(distancia)} de tu ubicaciÛn
             </p>
           {/if}
         </div>
@@ -149,14 +171,14 @@
       <div class="info-section">
 
         {#if comercio.direccion}
-          <button class="info-row" on:click={() => abrirMapa(comercio.lat, comercio.lng, comercio.nombre + ' ' + comercio.direccion)}>
+          <button class="info-row" on:click={() => abrirMapaComercio()}>
             <div class="info-icon-wrap">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
               </svg>
             </div>
             <div class="info-text">
-              <span class="info-label">Direcci√≥n</span>
+              <span class="info-label">DirecciÛn</span>
               <span class="info-value">{comercio.direccion}</span>
             </div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-light)" stroke-width="2">
@@ -174,13 +196,13 @@
               </svg>
             </div>
             <div class="info-text">
-              <span class="info-label">Descripci√≥n</span>
+              <span class="info-label">DescripciÛn</span>
               <span class="info-value">{comercio.descripcion}</span>
             </div>
           </div>
         {/if}
 
-        <!-- Estado de verificaci√≥n -->
+        <!-- Estado de verificaciÛn -->
         <div class="info-row no-action">
           <div class="info-icon-wrap">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--c-primary)" stroke-width="2">
@@ -192,41 +214,41 @@
             <span class="estado-chip" style="color:{estadoInfo.color};background:{estadoInfo.bg}">
               {estadoInfo.label}
               {#if comercio.totalVerificaciones > 0}
-                ¬∑ {comercio.totalVerificaciones} verificaci√≥n{comercio.totalVerificaciones !== 1 ? 'es' : ''}
+                ∑ {comercio.totalVerificaciones} verificaciÛn{comercio.totalVerificaciones !== 1 ? 'es' : ''}
               {/if}
             </span>
           </div>
         </div>
       </div>
 
-      <!-- Acci√≥n: verificar -->
+      <!-- AcciÛn: verificar -->
       <div class="acciones-section">
-        <h3 class="acciones-titulo">¬øConoc√©s este comercio?</h3>
+        <h3 class="acciones-titulo">øConocÈs este comercio?</h3>
 
         {#if yaVerifique}
           <div class="verificado-msg">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
               <polyline points="20 6 9 17 4 12" stroke="var(--c-primary)" stroke-width="2.5" fill="none"/>
             </svg>
-            Ya verificaste este comercio. ¬°Gracias!
+            Ya verificaste este comercio. °Gracias!
           </div>
         {:else}
           <button class="btn-verificar" on:click={handleVerificar} disabled={verificando}>
             {#if verificando}
-              <div class="mini-spinner"></div> Verificando‚Ä¶
+              <div class="mini-spinner"></div> VerificandoÖ
             {:else}
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               </svg>
-              Confirmar que existe en esta direcci√≥n
+              Confirmar que existe en esta direcciÛn
             {/if}
           </button>
           <p class="verificar-desc">
-            Al verificar confirm√°s que este comercio existe y est√° en la direcci√≥n indicada. Con 3 verificaciones queda confirmado autom√°ticamente.
+            Al verificar confirm·s que este comercio existe y est· en la direcciÛn indicada. Con 3 verificaciones queda confirmado autom·ticamente.
           </p>
         {/if}
 
-        <!-- Reclamar si es el due√±o -->
+        <!-- Reclamar si es el dueÒo -->
         {#if !comercio.reclamadoPor && user && !comercio.reclamoBloqueado}
           {#if !mostrarFormReclamo}
             <button class="btn-reclamar" on:click={toggleFormReclamo}>
@@ -234,12 +256,12 @@
                 <rect x="2" y="7" width="20" height="14" rx="2"/>
                 <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
               </svg>
-              Soy el due√±o ‚Äî reclamar gesti√≥n
+              Soy el dueÒo ó reclamar gestiÛn
             </button>
           {:else}
             <div class="reclamo-form">
               <p class="reclamo-desc">
-                Ingres√° el c√≥digo de 6 caracteres que figura en la credencial f√≠sica entregada por el administrador.
+                Ingres· el cÛdigo de 6 caracteres que figura en la credencial fÌsica entregada por el administrador.
               </p>
               <input
                 class="reclamo-input"
@@ -257,7 +279,7 @@
               <div class="reclamo-btns">
                 <button class="btn-reclamo-cancel" on:click={toggleFormReclamo}>Cancelar</button>
                 <button class="btn-reclamo-ok" on:click={handleReclamar} disabled={reclamando || !codigoReclamo.trim()}>
-                  {#if reclamando}Verificando‚Ä¶{:else}Confirmar{/if}
+                  {#if reclamando}VerificandoÖ{:else}Confirmar{/if}
                 </button>
               </div>
             </div>
@@ -265,7 +287,7 @@
 
         {:else if comercio.reclamoBloqueado}
           <div class="reclamo-bloqueado">
-            ‚ö†Ô∏è Este comercio est√° bloqueado por intentos fallidos. Contact√° al administrador.
+            ?? Este comercio est· bloqueado por intentos fallidos. Contact· al administrador.
           </div>
 
         {:else if comercio.reclamadoPor === user?.uid}
@@ -274,18 +296,18 @@
               <rect x="2" y="7" width="20" height="14" rx="2"/>
               <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
             </svg>
-            Sos el due√±o verificado de este comercio
+            Sos el dueÒo verificado de este comercio
           </div>
         {/if}
       </div>
 
-      <!-- Pr√≥ximamente: precios -->
+      <!-- PrÛximamente: precios -->
       <div class="proximos-section">
         <div class="proximos-card">
-          <span class="proximos-icon">üí∞</span>
+          <span class="proximos-icon">??</span>
           <div>
             <p class="proximos-titulo">Precios</p>
-            <p class="proximos-desc">Pr√≥ximamente podr√°s ver y cargar precios de este comercio.</p>
+            <p class="proximos-desc">PrÛximamente podr·s ver y cargar precios de este comercio.</p>
           </div>
           <span class="proximos-badge">M3</span>
         </div>
@@ -505,7 +527,7 @@
     font-weight: 600;
   }
 
-  /* Pr√≥ximos m√≥dulos */
+  /* PrÛximos mÛdulos */
   .proximos-section {}
   .proximos-card {
     display: flex;

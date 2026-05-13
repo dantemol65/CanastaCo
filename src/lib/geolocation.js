@@ -2,7 +2,6 @@
 
 /**
  * Obtiene la posición actual del usuario via GPS
- * @returns {Promise<{lat, lng}>}
  */
 export function obtenerPosicion() {
   return new Promise((resolve, reject) => {
@@ -46,11 +45,77 @@ export function formatDistancia(km) {
 }
 
 /**
- * Abre Google Maps con la dirección del comercio
+ * Abre Google Maps en las coordenadas dadas
  */
-export function abrirMapa(lat, lng, nombre) {
-  const query = lat && lng
-    ? `${lat},${lng}`
-    : encodeURIComponent(nombre)
+export function abrirMapa(lat, lng, nombre, contexto) {
+  let query
+  if (lat && lng) {
+    query = `${lat},${lng}`
+  } else {
+    const texto = contexto ? `${nombre}, ${contexto}` : nombre
+    query = encodeURIComponent(texto)
+  }
   window.open(`https://maps.google.com/?q=${query}`, '_blank')
+}
+
+/**
+ * Geocodifica una dirección usando Google Geocoding API
+ * Requiere VITE_GOOGLE_MAPS_KEY en las variables de entorno
+ */
+export async function geocodificarDireccion({ direccion, localidad, provincia, pais = 'Argentina' }) {
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_KEY
+  if (!apiKey) {
+    console.error('geocodificarDireccion: falta VITE_GOOGLE_MAPS_KEY')
+    return null
+  }
+
+  // Limpiar nombre de localidad (sacar texto entre paréntesis que confunde a Google)
+  const localidadLimpia = localidad?.replace(/\s*\(.*?\)/g, '').trim() || ''
+
+  async function googleGeocode(address) {
+    const params = new URLSearchParams({
+      address,
+      key:      apiKey,
+      language: 'es',
+      region:   'ar',
+    })
+    const res  = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`)
+    const data = await res.json()
+    console.log('[Google Geocoding]', address, '→', data.status,
+                data.results[0]?.formatted_address || '')
+    if (data.status === 'OK' && data.results.length > 0) return data.results[0]
+    return null
+  }
+
+  try {
+    // ── Intento 1: dirección completa ─────────────────────────────────────
+    if (direccion?.trim()) {
+      const addr = [direccion.trim(), localidadLimpia, provincia, pais]
+                    .filter(Boolean).join(', ')
+      const r = await googleGeocode(addr)
+      if (r) return {
+        lat:         r.geometry.location.lat,
+        lng:         r.geometry.location.lng,
+        displayName: r.formatted_address,
+        aproximado:  false,
+      }
+    }
+
+    // ── Intento 2: solo localidad + provincia (centro de localidad) ────────
+    if (localidadLimpia) {
+      const addr2 = [localidadLimpia, provincia, pais].filter(Boolean).join(', ')
+      const r2 = await googleGeocode(addr2)
+      if (r2) return {
+        lat:         r2.geometry.location.lat,
+        lng:         r2.geometry.location.lng,
+        displayName: r2.formatted_address,
+        aproximado:  true,
+      }
+    }
+
+    return null
+  } catch (err) {
+    console.error('geocodificarDireccion:', err)
+    return null
+  }
 }

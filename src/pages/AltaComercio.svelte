@@ -3,7 +3,7 @@
   import { currentPage, userProfile } from '../stores/auth.js'
   import { altaComercio, TIPOS_COMERCIO } from '../stores/comercios.js'
   import { provincias, getDepartamentos, getLocalidades } from '../lib/georef.js'
-  import { obtenerPosicion } from '../lib/geolocation.js'
+  import { obtenerPosicion, geocodificarDireccion } from '../lib/geolocation.js'
 
   // Form state
   let nombre      = ''
@@ -25,6 +25,8 @@
   let errors      = {}
   let gpsLoading  = false
   let gpsOk       = false
+  let geocoding   = false
+  let geoAprox    = false  // true si las coords son del centro de la localidad, no la calle
 
   // Cargar datos geográficos del perfil del usuario
   onMount(async () => {
@@ -39,6 +41,70 @@
       loadingLocs = false
     }
   })
+
+  // Geocodificar automáticamente cuando hay dirección + localidad completos
+  let geoTimeout = null
+  async function autoGeocodificar() {
+    if (!localidadId) return
+    clearTimeout(geoTimeout)
+    geoTimeout = setTimeout(async () => {
+      geocoding = true
+      geoAprox  = false
+      lat = null
+      lng = null
+      gpsOk = false
+      try {
+        const nomLocalidad = localidades.find(l => l.id === localidadId)?.nombre || ''
+        const nomProvincia = provincias.find(p => p.id === provinciaId)?.nombre   || ''
+
+        // DEBUG TEMPORAL — eliminar después de verificar
+        console.log('[Geocoding] nomLocalidad:', JSON.stringify(nomLocalidad))
+        console.log('[Geocoding] nomProvincia:', JSON.stringify(nomProvincia))
+        console.log('[Geocoding] direccion:', JSON.stringify(direccion.trim()))
+
+        // Intento 1: dirección completa + localidad + provincia
+        let result = null
+        if (direccion.trim()) {
+          result = await geocodificarDireccion({
+            direccion: direccion.trim(),
+            localidad: nomLocalidad,
+            provincia: nomProvincia,
+          })
+        }
+
+        // Intento 2: solo localidad + provincia (fallback al centro)
+        if (!result && nomLocalidad) {
+          result = await geocodificarDireccion({
+            direccion: '',
+            localidad: nomLocalidad,
+            provincia: nomProvincia,
+          })
+          if (result) result.aproximado = true
+        }
+
+        // Intento 3: solo provincia (último recurso)
+        if (!result && nomProvincia) {
+          result = await geocodificarDireccion({
+            direccion: '',
+            localidad: '',
+            provincia: nomProvincia,
+          })
+          if (result) result.aproximado = true
+        }
+
+        if (result) {
+          lat      = result.lat
+          lng      = result.lng
+          gpsOk    = true
+          geoAprox = result.aproximado || false
+        }
+      } catch (e) {
+        console.error('autoGeocodificar:', e)
+      } finally {
+        geocoding = false
+      }
+    }, 800)
+  }
 
   async function onProvinciaChange() {
     departamentoId = ''; localidadId = ''
@@ -166,30 +232,66 @@
       <input id="direccion" class="form-input" class:error={errors.direccion}
         type="text" bind:value={direccion}
         placeholder="Ej: San Martín 420, frente a la plaza"
-        autocomplete="off" />
+        autocomplete="off"
+        on:blur={autoGeocodificar} />
       {#if errors.direccion}<span class="field-error">{errors.direccion}</span>{/if}
     </div>
 
     <!-- GPS -->
     <div class="form-group">
-      <label class="form-label" for="gps-btn">Ubicación GPS <span class="form-label-opt">(opcional, mejora la precisión)</span></label>
-      <button type="button" id="gps-btn" class="gps-btn-full" on:click={usarGPS} disabled={gpsLoading}>
-        {#if gpsOk}
+      <label class="form-label" for="gps-btn">Ubicación GPS</label>
+      <div class="gps-aviso">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-primary)" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>
+          <strong>Recomendado:</strong> usá el GPS para marcar la ubicación exacta del comercio.
+          La dirección de calle se usa como referencia, pero puede tener menor precisión en zonas sin mapa actualizado.
+        </span>
+      </div>
+      <button type="button" id="gps-btn" class="gps-btn-full" on:click={usarGPS} disabled={gpsLoading || geocoding}>
+        {#if geocoding}
+          <div class="mini-spinner"></div> Buscando dirección…
+        {:else if gpsOk && !geoAprox}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
           </svg>
-          Ubicación capturada ({lat.toFixed(4)}, {lng.toFixed(4)})
+          Ubicación encontrada ✓ — tocá para usar GPS exacto
+        {:else if gpsOk && geoAprox}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--c-accent)" stroke="none">
+            <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+          </svg>
+          Ubicación aproximada (centro de localidad) — tocá para usar GPS exacto
         {:else if gpsLoading}
-          <div class="mini-spinner"></div> Obteniendo ubicación…
+          <div class="mini-spinner"></div> Obteniendo GPS…
         {:else}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <circle cx="12" cy="12" r="3"/>
             <path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
           </svg>
-          Usar mi ubicación actual
+          Usar mi ubicación GPS exacta
         {/if}
       </button>
       {#if errors.gps}<span class="field-error">{errors.gps}</span>{/if}
+
+      {#if lat && lng}
+        <div class="coords-debug">
+          <span class="coords-label">{geoAprox ? '📍 Aprox.' : '📌 Exacto'}</span>
+          lat: <strong>{lat.toFixed(6)}</strong> · lng: <strong>{lng.toFixed(6)}</strong>
+          {#if geoAprox}
+            <span class="coords-hint"> — ubicación aproximada</span>
+          {/if}
+        </div>
+      {:else if geocoding}
+        <div class="coords-debug">
+          <span class="coords-label">🔍 Buscando…</span>
+        </div>
+      {:else if localidadId && !geocoding}
+        <div class="coords-debug coords-notfound">
+          <span class="coords-label">⚠️ Sin coordenadas</span>
+          <span> — usá el GPS o verificá la dirección</span>
+        </div>
+      {/if}
     </div>
 
     <!-- Provincia -->
@@ -220,7 +322,8 @@
       <label class="form-label" for="loc-alta">Localidad</label>
       <select id="loc-alta" class="form-select" class:error={errors.localidad}
         bind:value={localidadId}
-        disabled={!departamentoId || loadingLocs}>
+        disabled={!departamentoId || loadingLocs}
+        on:change={autoGeocodificar}>
         <option value="">{!departamentoId ? 'Primero elegí departamento' : loadingLocs ? 'Cargando…' : 'Seleccioná…'}</option>
         {#each localidades as l}<option value={l.id}>{l.nombre}</option>{/each}
       </select>
@@ -353,6 +456,38 @@
   .tipo-btn.selected .tipo-label { color: var(--c-primary); }
 
   /* GPS */
+  .gps-aviso {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #EFF6FF;
+    border: 1px solid #BFDBFE;
+    border-radius: 10px;
+    padding: 9px 12px;
+    font-size: 0.78rem;
+    color: #1E40AF;
+    line-height: 1.4;
+    margin-bottom: 8px;
+  }
+  .gps-aviso svg { flex-shrink: 0; margin-top: 1px; }
+
+  .coords-debug {
+    font-size: 0.75rem;
+    font-family: monospace;
+    background: #F8FAFC;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    padding: 7px 10px;
+    color: #475569;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .coords-label { font-weight: 700; font-family: var(--font-ui); }
+  .coords-hint  { color: #F59E0B; font-family: var(--font-ui); }
+  .coords-notfound { background: #FFF7ED; border-color: #FED7AA; color: #92400E; }
+
   .gps-btn-full {
     width: 100%;
     display: flex;
