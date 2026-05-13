@@ -82,9 +82,16 @@ export async function cargarComerciosPorLocalidad(localidadId) {
   cargandoComercios.set(true)
   errorComercios.set(null)
 
-  // Mostrar caché inmediatamente para que la UI no quede vacía offline
+  // Mostrar caché inmediatamente
   const cached = loadCacheComerciosLocal(localidadId)
   if (cached) comercios.set(cached)
+
+  // Sin conexión: usar caché directamente sin intentar Firestore
+  if (!navigator.onLine) {
+    if (!cached) errorComercios.set('Sin conexión — no hay datos guardados para esta localidad.')
+    cargandoComercios.set(false)
+    return cached || []
+  }
 
   try {
     const q = query(
@@ -105,7 +112,12 @@ export async function cargarComerciosPorLocalidad(localidadId) {
     return lista
   } catch (err) {
     console.error('cargarComerciosPorLocalidad:', err)
-    if (!cached) errorComercios.set('Sin conexión — no hay datos guardados para esta localidad.')
+    if (cached) {
+      // Restaurar caché — el store puede haberse vaciado durante el intento fallido
+      comercios.set(cached)
+    } else {
+      errorComercios.set('Sin conexión — no hay datos guardados para esta localidad.')
+    }
     return cached || []
   } finally {
     cargandoComercios.set(false)
@@ -115,15 +127,27 @@ export async function cargarComerciosPorLocalidad(localidadId) {
 // ── Cargar un comercio por ID ─────────────────────────────────────────────
 
 export async function cargarComercio(id) {
+  // Intentar caché primero para respuesta inmediata
+  const cacheKey = 'canastaco_comercio_' + id
+  const cached = (() => {
+    try { return JSON.parse(localStorage.getItem(cacheKey)) } catch { return null }
+  })()
+  if (cached) comercioActivo.set(cached)
+
+  // Sin conexión: usar caché
+  if (!navigator.onLine) return cached
+
   try {
     const snap = await getDoc(doc(db, 'comercios', id))
     if (!snap.exists()) return null
     const comercio = { id: snap.id, ...snap.data() }
     comercioActivo.set(comercio)
+    // Guardar en caché para uso offline
+    try { localStorage.setItem(cacheKey, JSON.stringify(comercio)) } catch {}
     return comercio
   } catch (err) {
     console.error('cargarComercio:', err)
-    return null
+    return cached  // fallback al caché si falla
   }
 }
 

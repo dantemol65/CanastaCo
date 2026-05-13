@@ -21,12 +21,19 @@
 
   let seccion = 'notificaciones'  // notificaciones | comercios | usuarios | credencial
   let cargando = false
-  let offline  = !navigator.onLine
+  let offline = false
 
-  // Detectar cambios de conexión
-  if (typeof window !== 'undefined') {
-    window.addEventListener('online',  () => offline = false)
-    window.addEventListener('offline', () => offline = true)
+  async function checkConexion() {
+    try {
+      const ctrl = new AbortController()
+      setTimeout(() => ctrl.abort(), 3000)
+      await fetch('https://www.google.com/generate_204', {
+        mode: 'no-cors', signal: ctrl.signal, cache: 'no-store'
+      })
+      offline = false
+    } catch {
+      offline = true
+    }
   }
 
   // Datos
@@ -38,6 +45,9 @@
   let busquedaComercio    = ''
 
   onMount(async () => {
+    checkConexion()
+    window.addEventListener('online',  checkConexion)
+    window.addEventListener('offline', () => offline = true)
     await cargarNotificaciones()
   })
 

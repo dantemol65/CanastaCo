@@ -31,11 +31,15 @@
   }
 
   onMount(async () => {
-    comercioActivo.set(null)
+    // No limpiar el store si ya tiene este comercio (navegación rápida)
+    if ($comercioActivo?.id !== comercioId) comercioActivo.set(null)
     const c = await cargarComercio(comercioId)
-    if (!c) error = 'Comercio no encontrado.'
+    if (!c) {
+      error = navigator.onLine
+        ? 'Comercio no encontrado.'
+        : 'Sin conexión — este comercio no está guardado localmente.'
+    }
     cargando = false
-    // GPS silencioso
     obtenerPosicion().then(p => posicion = p).catch(() => {})
   })
 

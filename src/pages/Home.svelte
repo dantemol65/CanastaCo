@@ -3,6 +3,38 @@
   import { totalNoLeidas, cargarNotificaciones } from '../stores/notificaciones.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
   import { onMount } from 'svelte'
+  import { writable } from 'svelte/store'
+
+  const offline = writable(false)
+
+  // Verificación real de conectividad — navigator.onLine no es confiable
+  // cuando hay red local sin internet
+  async function checkConexion() {
+    try {
+      // Fetch a un recurso mínimo de Google con timeout corto
+      const ctrl = new AbortController()
+      setTimeout(() => ctrl.abort(), 3000)
+      await fetch('https://www.google.com/generate_204', {
+        mode: 'no-cors', signal: ctrl.signal, cache: 'no-store'
+      })
+      offline.set(false)
+    } catch {
+      offline.set(true)
+    }
+  }
+
+  onMount(() => {
+    checkConexion()
+    window.addEventListener('online',  checkConexion)
+    window.addEventListener('offline', () => offline.set(true))
+    // Verificar cada 30 segundos
+    const interval = setInterval(checkConexion, 30000)
+    return () => {
+      window.removeEventListener('online',  checkConexion)
+      window.removeEventListener('offline', () => offline.set(true))
+      clearInterval(interval)
+    }
+  })
   import BottomNav from '../components/BottomNav.svelte'
 
   $: user    = $currentUser
@@ -103,6 +135,12 @@
     </div>
   </header>
 
+  {#if $offline}
+    <div class="offline-banner-home">
+      📵 Sin conexión — mostrando datos guardados
+    </div>
+  {/if}
+
   {#if $pendingSync}
     <button class="sync-banner" on:click={syncPendingProfile}>
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -202,6 +240,16 @@
   }
 
   /* ── Header ── */
+  .offline-banner-home {
+    background: #FEF3C7;
+    border-bottom: 1px solid #FDE68A;
+    color: #92400E;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    text-align: center;
+  }
+
   .sync-banner {
     display: flex;
     align-items: center;
