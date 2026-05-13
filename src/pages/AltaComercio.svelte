@@ -57,11 +57,6 @@
         const nomLocalidad = localidades.find(l => l.id === localidadId)?.nombre || ''
         const nomProvincia = provincias.find(p => p.id === provinciaId)?.nombre   || ''
 
-        // DEBUG TEMPORAL — eliminar después de verificar
-        console.log('[Geocoding] nomLocalidad:', JSON.stringify(nomLocalidad))
-        console.log('[Geocoding] nomProvincia:', JSON.stringify(nomProvincia))
-        console.log('[Geocoding] direccion:', JSON.stringify(direccion.trim()))
-
         // Intento 1: dirección completa + localidad + provincia
         let result = null
         if (direccion.trim()) {
@@ -274,23 +269,14 @@
       </button>
       {#if errors.gps}<span class="field-error">{errors.gps}</span>{/if}
 
-      {#if lat && lng}
-        <div class="coords-debug">
-          <span class="coords-label">{geoAprox ? '📍 Aprox.' : '📌 Exacto'}</span>
-          lat: <strong>{lat.toFixed(6)}</strong> · lng: <strong>{lng.toFixed(6)}</strong>
-          {#if geoAprox}
-            <span class="coords-hint"> — ubicación aproximada</span>
-          {/if}
-        </div>
-      {:else if geocoding}
-        <div class="coords-debug">
-          <span class="coords-label">🔍 Buscando…</span>
-        </div>
-      {:else if localidadId && !geocoding}
-        <div class="coords-debug coords-notfound">
-          <span class="coords-label">⚠️ Sin coordenadas</span>
-          <span> — usá el GPS o verificá la dirección</span>
-        </div>
+      {#if geoAprox && lat && lng}
+        <p class="geo-aprox-aviso">
+          📍 Ubicación aproximada al centro de la localidad. Para mayor precisión usá el GPS.
+        </p>
+      {:else if !lat && !lng && !geocoding && localidadId}
+        <p class="geo-aprox-aviso geo-notfound">
+          ⚠️ No se encontró la dirección. Usá el GPS para marcar la ubicación exacta.
+        </p>
       {/if}
     </div>
 
@@ -471,22 +457,20 @@
   }
   .gps-aviso svg { flex-shrink: 0; margin-top: 1px; }
 
-  .coords-debug {
+  .geo-aprox-aviso {
     font-size: 0.75rem;
-    font-family: monospace;
-    background: #F8FAFC;
-    border: 1px solid #E2E8F0;
+    color: #92400E;
+    background: #FFF7ED;
+    border: 1px solid #FED7AA;
     border-radius: 8px;
     padding: 7px 10px;
-    color: #475569;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    margin: 0;
   }
-  .coords-label { font-weight: 700; font-family: var(--font-ui); }
-  .coords-hint  { color: #F59E0B; font-family: var(--font-ui); }
-  .coords-notfound { background: #FFF7ED; border-color: #FED7AA; color: #92400E; }
+  .geo-notfound {
+    color: #991B1B;
+    background: #FEF2F2;
+    border-color: #FECACA;
+  }
 
   .gps-btn-full {
     width: 100%;

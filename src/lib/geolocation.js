@@ -81,8 +81,7 @@ export async function geocodificarDireccion({ direccion, localidad, provincia, p
     })
     const res  = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`)
     const data = await res.json()
-    console.log('[Google Geocoding]', address, '→', data.status,
-                data.results[0]?.formatted_address || '')
+    // console.log('[Google Geocoding]', address, '→', data.status)
     if (data.status === 'OK' && data.results.length > 0) return data.results[0]
     return null
   }
