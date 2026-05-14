@@ -60,7 +60,7 @@
     {
       id: 2,
       icon: '🏪',
-      titulo: 'Comercios y búsqueda',
+      titulo: 'Comercios',
       desc: 'Explorá comercios de tu zona, verificalos y agregá nuevos.',
       color: '#1B6B3A',
       disponible: true,
@@ -68,11 +68,12 @@
     },
     {
       id: 3,
-      icon: '📷',
-      titulo: 'Cargar precios',
-      desc: 'Publicá precios escaneando ticket o dictando por voz.',
+      icon: '🏷️',
+      titulo: 'Precios',
+      desc: 'Consultá, cargá y comparás precios entre comercios de tu localidad.',
       color: '#0277BD',
-      disponible: false,
+      disponible: true,
+      pagina: 'publicar',
     },
     {
       id: 4,
@@ -158,20 +159,26 @@
       <!-- Saludo -->
       <section class="greeting-section">
         <h1 class="greeting-title">¡Hola, <em>{displayName}</em>!</h1>
-        <p class="greeting-sub">Esto es lo que viene en Canasta.co</p>
+        <p class="greeting-sub">Comercios y precios de tu localidad</p>
       </section>
 
-      <!-- Módulo 1 completado -->
-      <div class="module-done">
-        <div class="module-done-icon">✓</div>
-        <div class="module-done-text">
-          <span class="module-done-num">Módulo 1</span>
-          <span class="module-done-label">Login y Perfil</span>
+      <!-- Módulos completados -->
+      {#each [
+        { num: 1, label: 'Login y Perfil' },
+        { num: 2, label: 'Comercios' },
+        { num: 3, label: 'Precios' },
+      ] as m}
+        <div class="module-done">
+          <div class="module-done-icon">✓</div>
+          <div class="module-done-text">
+            <span class="module-done-num">Módulo {m.num}</span>
+            <span class="module-done-label">{m.label}</span>
+          </div>
+          <div class="module-done-badge">
+            <span class="badge badge-green">Completo</span>
+          </div>
         </div>
-        <div class="module-done-badge">
-          <span class="badge badge-green">Completo</span>
-        </div>
-      </div>
+      {/each}
 
       <!-- Próximos módulos -->
       <section class="modules-section">

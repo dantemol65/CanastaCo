@@ -11,7 +11,10 @@
   import { getDoc, doc } from 'firebase/firestore'
   import { db } from '../lib/firebase.js'
 
-  export let productoId = ''
+  export let pageParam = ''   // formato: 'productoId__comercioId'
+
+  $: productoId = pageParam.split('__')[0] || ''
+  $: origenComercioId = pageParam.split('__')[1] || ''
 
   let producto     = null
   let precios      = []
@@ -80,7 +83,13 @@
     currentPage.set('precios-comercio:' + comercioId)
   }
 
-  function volver() { history.back?.() || currentPage.set('buscar') }
+  function volver() {
+    if (origenComercioId) {
+      currentPage.set('precios-comercio:' + origenComercioId)
+    } else {
+      currentPage.set('buscar')
+    }
+  }
 
   function pctDiff(precio) {
     if (!masBarato || masBarato.precio === 0) return null

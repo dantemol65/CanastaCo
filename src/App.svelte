@@ -68,7 +68,7 @@
   <ListaTematica />
 
 {:else if basePage === 'comparador'}
-  <ComparadorPrecios productoId={pageParam} />
+  <ComparadorPrecios pageParam={pageParam} />
 
 {:else if basePage === 'publicar'}
   <PublicarLanding />

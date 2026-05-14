@@ -1,5 +1,13 @@
 <script>
   import { onMount, tick } from 'svelte'
+
+  // Acción portal: mueve el nodo al body para escapar de cualquier overflow/transform
+  function portal(node) {
+    document.body.appendChild(node)
+    return {
+      destroy() { node.isConnected && document.body.removeChild(node) }
+    }
+  }
   import { currentPage, currentUser, userProfile } from '../stores/auth.js'
   import { comercioActivo, cargarComercio } from '../stores/comercios.js'
   import {
@@ -199,7 +207,8 @@
   }
 
   function irComparador(productoId) {
-    currentPage.set('comparador:' + productoId)
+    // Codificamos comercioId en la ruta para que el comparador sepa adónde volver
+    currentPage.set('comparador:' + productoId + '__' + comercioId)
   }
 
   function irListaPrecios() {
@@ -207,13 +216,17 @@
   }
 
   function volver() { currentPage.set('detalle-comercio:' + comercioId) }
+
+  // Auto-foco al input de búsqueda cuando abre el sheet
+  let inputBusqEl
+  $: if (mostrarForm && paso === 1 && inputBusqEl) {
+    tick().then(() => {
+      setTimeout(() => inputBusqEl?.focus(), 120)
+    })
+  }
 </script>
 
 <div class="app-shell precios-shell">
-
-  {#if toastMsg}
-    <div class="toast" class:toast-err={toastTipo === 'err'} role="status">{toastMsg}</div>
-  {/if}
 
   <!-- Header -->
   <header class="precios-header">
@@ -366,82 +379,110 @@
     {/if}
   </main>
 
-  <!-- FAB: cargar precio -->
-  {#if !cargando && !error && !mostrarForm}
-    <button class="fab-cargar" on:click={abrirForm} aria-label="Cargar precio">
-      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
-        <line x1="12" y1="5" x2="12" y2="19"/>
-        <line x1="5"  y1="12" x2="19" y2="12"/>
-      </svg>
-      Cargar precio
-    </button>
-  {/if}
+</div><!-- /app-shell -->
 
-  <!-- Bottom sheet: formulario de precio -->
-  {#if mostrarForm}
-    <div class="sheet-overlay" on:click={cerrarForm} role="presentation"></div>
-    <div class="bottom-sheet" role="dialog" aria-label="Cargar precio">
+{#if toastMsg}
+  <div class="toast" class:toast-err={toastTipo === 'err'} role="status">{toastMsg}</div>
+{/if}
 
-      <div class="sheet-handle"></div>
-      <div class="sheet-header">
-        <h2 class="sheet-titulo">
-          {paso === 1 ? '¿Qué producto?' : 'Ingresá el precio'}
-        </h2>
-        <button class="sheet-cerrar" on:click={cerrarForm} aria-label="Cerrar">✕</button>
+<!-- FAB: fuera del app-shell -->
+{#if !cargando && !error && !mostrarForm}
+  <button class="fab-cargar" on:click={abrirForm} aria-label="Cargar precio">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+      <line x1="12" y1="5" x2="12" y2="19"/>
+      <line x1="5"  y1="12" x2="19" y2="12"/>
+    </svg>
+    Cargar precio
+  </button>
+{/if}
+
+<!-- ── Bottom sheet: FUERA del app-shell para evitar overflow:hidden ── -->
+{#if mostrarForm}
+    <div class="sheet-overlay" use:portal on:click={cerrarForm} role="presentation"></div>
+    <div class="bottom-sheet" use:portal role="dialog" aria-label="Cargar precio">
+
+      <!-- Cabecera fija -->
+      <div class="sheet-top">
+        <div class="sheet-handle"></div>
+        <div class="sheet-header">
+          <div class="sheet-paso-info">
+            <span class="sheet-paso-num">Paso {paso} de 2</span>
+            <h2 class="sheet-titulo">
+              {paso === 1 ? 'Buscá el producto' : 'Ingresá el precio'}
+            </h2>
+          </div>
+          <button class="sheet-cerrar" on:click={cerrarForm} aria-label="Cerrar">✕</button>
+        </div>
       </div>
 
-      <!-- Paso 1: buscar/crear producto -->
-      {#if paso === 1}
-        <div class="sheet-body">
+      <!-- Cuerpo scrollable -->
+      <div class="sheet-scroll">
+
+        <!-- Paso 1: buscar/crear producto -->
+        {#if paso === 1}
+
           <div class="form-group">
-            <label class="form-label" for="busq-prod">Nombre del producto</label>
-            <input
-              id="busq-prod"
-              type="text"
-              class="form-input"
-              placeholder="Ej: Leche entera, Tomate, Pan lactal…"
-              bind:value={busquedaProd}
-              autocomplete="off"
-              autocorrect="off"
-            />
+            <div class="search-input-wrap">
+              <svg class="search-icon-inner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                id="busq-prod"
+                type="text"
+                class="form-input search-prod-input"
+                placeholder="Leche, Tomate, Pan lactal…"
+                bind:value={busquedaProd}
+                bind:this={inputBusqEl}
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="words"
+              />
+              {#if busquedaProd}
+                <button class="search-clear-btn" on:click={() => busquedaProd = ''} tabindex="-1">✕</button>
+              {/if}
+            </div>
+            <p class="form-hint" style="margin-top:6px">Escribí al menos 2 letras para buscar o crear un producto nuevo.</p>
           </div>
 
-          <!-- Sugerencias -->
+          <!-- Sugerencias del catálogo -->
           {#if sugerencias.length > 0}
             <div class="sugerencias">
               {#each sugerencias as sug}
                 <button class="sugerencia-item" on:click={() => seleccionarProducto(sug)}>
                   <span class="sug-emoji">{catEmoji(sug.categoria)}</span>
-                  <span class="sug-nombre">{sug.nombre}</span>
-                  {#if sug.marca}<span class="sug-marca">{sug.marca}</span>{/if}
+                  <div class="sug-info">
+                    <span class="sug-nombre">{sug.nombre}</span>
+                    {#if sug.marca}<span class="sug-marca">{sug.marca}</span>{/if}
+                  </div>
                   <span class="sug-unidad">{sug.unidad}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-light)" stroke-width="2.5" stroke-linecap="round">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
                 </button>
               {/each}
             </div>
           {/if}
 
-          <!-- Modo nuevo producto -->
+          <!-- Producto no encontrado → crear nuevo -->
           {#if modoNuevo && busquedaProd.length >= 2}
             <div class="nuevo-producto-form">
-              <p class="nuevo-titulo">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-accent)" stroke-width="2.5" stroke-linecap="round">
-                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-                </svg>
-                Producto nuevo: <strong>{busquedaProd}</strong>
-              </p>
+              <div class="nuevo-header">
+                <span class="nuevo-icon">✨</span>
+                <div>
+                  <p class="nuevo-titulo">Producto nuevo</p>
+                  <p class="nuevo-nombre-preview">"{busquedaProd}"</p>
+                </div>
+              </div>
 
               <div class="nuevo-grid">
                 <div class="form-group">
-                  <label class="form-label" for="nueva-marca">Marca (opcional)</label>
-                  <input id="nueva-marca" type="text" class="form-input" placeholder="Ej: La Serenísima" bind:value={nuevaMarca}/>
+                  <label class="form-label" for="nueva-marca">Marca <span style="font-weight:400;opacity:.6">(opcional)</span></label>
+                  <input id="nueva-marca" type="text" class="form-input" placeholder="La Serenísima…" bind:value={nuevaMarca}/>
                 </div>
-
                 <div class="form-group">
                   <label class="form-label" for="nueva-unidad">Unidad</label>
                   <select id="nueva-unidad" class="form-select" bind:value={nuevaUnidad}>
-                    {#each UNIDADES as u}
-                      <option value={u.id}>{u.label}</option>
-                    {/each}
+                    {#each UNIDADES as u}<option value={u.id}>{u.label}</option>{/each}
                   </select>
                 </div>
               </div>
@@ -449,31 +490,30 @@
               <div class="form-group">
                 <label class="form-label" for="nueva-cat">Categoría</label>
                 <select id="nueva-cat" class="form-select" bind:value={nuevaCategoria}>
-                  {#each CATEGORIAS as c}
-                    <option value={c.id}>{c.emoji} {c.label}</option>
-                  {/each}
+                  {#each CATEGORIAS as c}<option value={c.id}>{c.emoji} {c.label}</option>{/each}
                 </select>
               </div>
-
-              <button class="btn btn-primary btn-full" on:click={confirmarProductoNuevo}>
-                Continuar con "{busquedaProd}"
-              </button>
             </div>
           {/if}
-        </div>
 
-      <!-- Paso 2: ingresar precio -->
-      {:else}
-        <div class="sheet-body">
+        <!-- Paso 2: ingresar precio -->
+        {:else}
+
+          <!-- Producto elegido -->
           <div class="producto-sel-chip">
-            <span>{catEmoji(productoSel?.categoria)}</span>
-            <span class="chip-nombre">{productoSel?.nombre}</span>
-            {#if productoSel?.marca}<span class="chip-marca">{productoSel.marca}</span>{/if}
-            <button class="chip-cambiar" on:click={() => { paso = 1; productoSel = null }}>cambiar</button>
+            <span class="chip-emoji">{catEmoji(productoSel?.categoria)}</span>
+            <div class="chip-data">
+              <span class="chip-nombre">{productoSel?.nombre}</span>
+              {#if productoSel?.marca}<span class="chip-marca">{productoSel.marca}</span>{/if}
+            </div>
+            <button class="chip-cambiar" on:click={() => { paso = 1; productoSel = null }}>
+              cambiar
+            </button>
           </div>
 
-          <div class="form-group precio-input-group">
-            <label class="form-label" for="precio-val">Precio ($)</label>
+          <!-- Input precio grande -->
+          <div class="form-group">
+            <label class="form-label" for="precio-val">¿Cuánto cuesta?</label>
             <div class="precio-input-wrap">
               <span class="peso-symbol">$</span>
               <input
@@ -489,15 +529,16 @@
             </div>
           </div>
 
+          <!-- Toggle oferta -->
           <label class="oferta-toggle">
             <input type="checkbox" bind:checked={esOferta}/>
             <span class="toggle-track"></span>
-            <span class="toggle-label">🔥 Es oferta / promoción</span>
+            <span class="toggle-label">🔥 Es oferta o promoción</span>
           </label>
 
           {#if esOferta}
             <div class="form-group" style="margin-top:14px">
-              <label class="form-label" for="venc">Vence el (opcional)</label>
+              <label class="form-label" for="venc">Válido hasta <span style="font-weight:400;opacity:.6">(opcional)</span></label>
               <input
                 id="venc"
                 type="date"
@@ -508,22 +549,45 @@
             </div>
           {/if}
 
+        {/if}
+
+        <!-- Espaciado para que el footer no tape contenido -->
+        <div style="height: 16px"></div>
+      </div>
+
+      <!-- Footer fijo con el botón de acción — SIEMPRE visible -->
+      <div class="sheet-footer">
+        {#if paso === 1}
+          {#if modoNuevo && busquedaProd.length >= 2}
+            <button class="btn btn-primary btn-full" on:click={confirmarProductoNuevo}>
+              Crear y continuar →
+            </button>
+          {:else}
+            <p class="footer-hint">
+              {#if busquedaProd.length < 2}
+                Escribí el nombre del producto para buscar
+              {:else if sugerencias.length > 0}
+                Tocá un producto de la lista
+              {:else}
+                Seguí escribiendo…
+              {/if}
+            </p>
+          {/if}
+        {:else}
           <button
             class="btn btn-primary btn-full"
-            style="margin-top:20px"
             on:click={guardarPrecio}
             disabled={!precioValor || guardando}
           >
             {guardando ? 'Guardando…' : '✓ Guardar precio'}
           </button>
-        </div>
-      {/if}
+        {/if}
+      </div>
 
     </div>
-  {/if}
+{/if}
 
-  <BottomNav active="buscar" />
-</div>
+<BottomNav active="buscar" />
 
 <style>
   .precios-shell { padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px)); }
@@ -643,70 +707,153 @@
   }
   .fab-cargar:active { transform: translateX(-50%) scale(0.97); }
 
-  /* Bottom sheet */
+  /* ── Bottom sheet ─────────────────────────────────────────── */
   .sheet-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.4);
-    z-index: 80; animation: fadeIn 0.2s ease;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    z-index: 9998;
+    animation: fadeOverlay 0.2s ease;
   }
+  @keyframes fadeOverlay { from{opacity:0} to{opacity:1} }
+
   .bottom-sheet {
-    position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
-    width: 100%; max-width: var(--app-width);
-    background: var(--c-surface); border-radius: var(--r-xl) var(--r-xl) 0 0;
-    padding: 12px 20px calc(env(safe-area-inset-bottom, 0px) + 24px);
-    z-index: 90; max-height: 88dvh; overflow-y: auto;
-    box-shadow: var(--s-lg);
-    animation: sheetUp 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: fixed;
+    bottom: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 100%;
+    max-width: 430px;
+    background: var(--c-surface);
+    border-radius: 20px 20px 0 0;
+    z-index: 9999;
+    box-shadow: 0 -8px 40px rgba(0,0,0,0.18);
+    animation: sheetUp 0.28s cubic-bezier(0.34, 1.4, 0.64, 1);
+    /* SIN flex, SIN max-height en el contenedor — control explícito por zona */
   }
   @keyframes sheetUp {
     from { transform: translateX(-50%) translateY(100%); }
     to   { transform: translateX(-50%) translateY(0); }
   }
-  .sheet-handle { width: 40px; height: 4px; background: var(--c-border); border-radius: 2px; margin: 0 auto 16px; }
-  .sheet-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-  .sheet-titulo { font-family: var(--f-brand); font-size: 19px; color: var(--c-text); }
-  .sheet-cerrar { background: none; border: none; font-size: 18px; color: var(--c-text-light); cursor: pointer; padding: 4px 8px; }
+
+  /* Cabecera: siempre visible, no scrollea */
+  .sheet-top {
+    padding: 12px 20px 0;
+  }
+  .sheet-handle {
+    width: 40px; height: 4px; background: var(--c-border);
+    border-radius: 2px; margin: 0 auto 14px;
+  }
+  .sheet-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    padding-bottom: 16px; border-bottom: 1px solid var(--c-border);
+  }
+  .sheet-paso-info {}
+  .sheet-paso-num {
+    display: block; font-size: 11px; font-weight: 700;
+    color: var(--c-text-light); text-transform: uppercase;
+    letter-spacing: 0.08em; margin-bottom: 2px;
+  }
+  .sheet-titulo { font-family: var(--f-brand); font-size: 20px; color: var(--c-text); }
+  .sheet-cerrar {
+    background: var(--c-surface-2); border: none; border-radius: 50%;
+    width: 32px; height: 32px; font-size: 14px; color: var(--c-text-light);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; margin-top: 2px;
+  }
+
+  /* Zona scrollable: altura explícita, nunca más del 55% del viewport */
+  .sheet-scroll {
+    padding: 18px 20px 8px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    max-height: 55vh;
+  }
+
+  /* Footer: siempre visible, debajo del scroll */
+  .sheet-footer {
+    padding: 12px 20px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    border-top: 1px solid var(--c-border);
+    background: var(--c-surface);
+    border-radius: 0 0 0 0;
+  }
+  .footer-hint {
+    text-align: center; font-size: 13px; color: var(--c-text-light);
+    padding: 8px 0; font-style: italic;
+  }
+
+  /* ── Input de búsqueda de producto ── */
+  .search-input-wrap {
+    position: relative; display: flex; align-items: center;
+  }
+  .search-icon-inner {
+    position: absolute; left: 14px; color: var(--c-text-light); pointer-events: none;
+  }
+  .search-prod-input {
+    padding-left: 44px !important;
+    padding-right: 40px;
+    font-size: 16px !important;
+    background: var(--c-surface-2) !important;
+    border-color: var(--c-border) !important;
+  }
+  .search-prod-input:focus {
+    background: var(--c-surface) !important;
+    border-color: var(--c-primary) !important;
+  }
+  .search-clear-btn {
+    position: absolute; right: 12px; background: none; border: none;
+    color: var(--c-text-light); cursor: pointer; font-size: 13px; padding: 6px;
+  }
 
   /* Sugerencias */
-  .sugerencias { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .sugerencias { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
   .sugerencia-item {
-    display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+    display: flex; align-items: center; gap: 10px; padding: 11px 12px;
     background: var(--c-surface-2); border-radius: var(--r-md);
     border: none; cursor: pointer; text-align: left; transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
   }
-  .sugerencia-item:hover { background: var(--c-border); }
-  .sug-emoji  { font-size: 15px; }
-  .sug-nombre { flex: 1; font-weight: 600; font-size: 14px; color: var(--c-text); }
-  .sug-marca  { font-size: 12px; color: var(--c-text-light); }
-  .sug-unidad { font-size: 12px; color: var(--c-text-mid); background: var(--c-surface); border-radius: 4px; padding: 2px 6px; }
+  .sugerencia-item:active { background: var(--c-border); }
+  .sug-emoji  { font-size: 16px; flex-shrink: 0; }
+  .sug-info   { flex: 1; min-width: 0; }
+  .sug-nombre { display: block; font-weight: 600; font-size: 14px; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sug-marca  { display: block; font-size: 11px; color: var(--c-text-light); }
+  .sug-unidad { font-size: 11px; color: var(--c-text-mid); background: var(--c-surface); border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
 
   /* Nuevo producto */
-  .nuevo-producto-form { background: var(--c-surface-2); border-radius: var(--r-lg); padding: 14px; margin-top: 8px; }
-  .nuevo-titulo { font-size: 13px; color: var(--c-text-mid); margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
-  .nuevo-titulo strong { color: var(--c-text); }
-  .nuevo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .nuevo-producto-form {
+    background: var(--c-surface-2); border-radius: var(--r-lg);
+    border: 1.5px dashed var(--c-accent); padding: 14px; margin-top: 10px;
+  }
+  .nuevo-header { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .nuevo-icon  { font-size: 20px; }
+  .nuevo-titulo { font-size: 11px; font-weight: 700; color: var(--c-text-mid); text-transform: uppercase; letter-spacing: 0.06em; }
+  .nuevo-nombre-preview { font-size: 15px; font-weight: 700; color: var(--c-text); }
+  .nuevo-grid  { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 
   /* Producto seleccionado chip */
   .producto-sel-chip {
-    display: flex; align-items: center; gap: 8px;
+    display: flex; align-items: center; gap: 10px;
     background: rgba(27,107,58,0.08); border-radius: var(--r-md);
-    padding: 10px 14px; margin-bottom: 20px;
+    border: 1.5px solid rgba(27,107,58,0.2);
+    padding: 11px 14px; margin-bottom: 20px;
   }
-  .chip-nombre { flex: 1; font-weight: 700; font-size: 15px; color: var(--c-primary); }
-  .chip-marca  { font-size: 12px; color: var(--c-text-light); }
-  .chip-cambiar { background: none; border: none; font-size: 12px; color: var(--c-text-light); text-decoration: underline; cursor: pointer; }
+  .chip-emoji  { font-size: 20px; }
+  .chip-data   { flex: 1; min-width: 0; }
+  .chip-nombre { display: block; font-weight: 700; font-size: 15px; color: var(--c-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chip-marca  { display: block; font-size: 11px; color: var(--c-text-light); }
+  .chip-cambiar { background: none; border: none; font-size: 12px; color: var(--c-text-light); text-decoration: underline; cursor: pointer; padding: 4px 0; flex-shrink: 0; }
 
   /* Precio input */
   .precio-input-wrap { position: relative; }
   .peso-symbol {
     position: absolute; left: 15px; top: 50%; transform: translateY(-50%);
-    font-size: 17px; font-weight: 700; color: var(--c-text-mid); pointer-events: none;
+    font-size: 18px; font-weight: 700; color: var(--c-text-mid); pointer-events: none;
   }
-  .precio-input { padding-left: 32px; font-size: 24px !important; font-weight: 700; letter-spacing: -0.02em; }
+  .precio-input { padding-left: 34px !important; font-size: 28px !important; font-weight: 700; letter-spacing: -0.02em; }
 
   /* Toggle oferta */
   .oferta-toggle {
-    display: flex; align-items: center; gap: 12px; cursor: pointer;
-    padding: 10px 0;
+    display: flex; align-items: center; gap: 12px; cursor: pointer; padding: 12px 0;
   }
   .oferta-toggle input { display: none; }
   .toggle-track {
@@ -744,4 +891,5 @@
     white-space: nowrap;
   }
   .toast.toast-err { background: var(--c-error); }
+
 </style>
