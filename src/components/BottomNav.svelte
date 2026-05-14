@@ -4,9 +4,7 @@
   import { currentPage } from '../stores/auth.js'
 
   function go(page) {
-    if (page === 'home' || page === 'perfil' || page === 'buscar') {
-      currentPage.set(page)
-    }
+    currentPage.set(page)
   }
 
   let comingSoon = false
@@ -20,8 +18,8 @@
 
   const tabs = [
     {
-      id: 'home',
-      label: 'Inicio',
+      id:        'home',
+      label:     'Inicio',
       available: true,
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
@@ -33,8 +31,8 @@
       </svg>`,
     },
     {
-      id: 'buscar',
-      label: 'Buscar',
+      id:        'buscar',
+      label:     'Comercios',
       available: true,
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="11" cy="11" r="8"/>
@@ -42,18 +40,23 @@
       </svg>`,
     },
     {
-      id: 'publicar',
-      label: 'Publicar',
-      available: false,
+      id:        'publicar',
+      label:     'Publicar',
+      available: true,
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <circle cx="12" cy="12" r="9"/>
         <line x1="12" y1="8" x2="12" y2="16"/>
-        <line x1="8" y1="12" x2="16" y2="12"/>
+        <line x1="8"  y1="12" x2="16" y2="12"/>
+      </svg>`,
+      iconActive: `<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.5" stroke-linecap="round">
+        <circle cx="12" cy="12" r="9"/>
+        <line x1="12" y1="8" x2="12" y2="16" stroke="white" stroke-width="2"/>
+        <line x1="8"  y1="12" x2="16" y2="12" stroke="white" stroke-width="2"/>
       </svg>`,
     },
     {
-      id: 'perfil',
-      label: 'Perfil',
+      id:        'perfil',
+      label:     'Perfil',
       available: true,
       icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -69,7 +72,7 @@
 
 <nav class="bottom-nav" aria-label="Navegación principal">
   {#if comingSoon}
-    <div class="coming-soon-toast" role="status"> Próximamente</div>
+    <div class="coming-soon-toast" role="status">Próximamente</div>
   {/if}
 
   {#each tabs as tab}
@@ -80,17 +83,25 @@
       aria-label={tab.label}
       aria-current={active === tab.id ? 'page' : undefined}
     >
-      <span class="tab-icon">
-        {#if active === tab.id && tab.iconActive}
-          {@html tab.iconActive}
-        {:else}
-          {@html tab.icon}
-        {/if}
-      </span>
-      <span class="tab-label">{tab.label}</span>
-      {#if !tab.available}
-        <span class="tab-dot" aria-hidden="true"></span>
+      <!-- Tab "Publicar": botón especial más destacado -->
+      {#if tab.id === 'publicar'}
+        <span class="tab-icon tab-icon-pub" class:active-pub={active === tab.id}>
+          {#if active === tab.id && tab.iconActive}
+            {@html tab.iconActive}
+          {:else}
+            {@html tab.icon}
+          {/if}
+        </span>
+      {:else}
+        <span class="tab-icon">
+          {#if active === tab.id && tab.iconActive}
+            {@html tab.iconActive}
+          {:else}
+            {@html tab.icon}
+          {/if}
+        </span>
       {/if}
+      <span class="tab-label">{tab.label}</span>
     </button>
   {/each}
 </nav>
@@ -131,7 +142,6 @@
   }
 
   .nav-tab:active { transform: scale(0.92); }
-
   .nav-tab.active { color: var(--c-primary); }
 
   .tab-icon {
@@ -146,6 +156,19 @@
     background: rgba(27,107,58,0.10);
   }
 
+  /* Tab publicar: ligeramente más grande */
+  .tab-icon-pub {
+    width: 40px; height: 32px;
+    border-radius: 12px;
+    background: rgba(27,107,58,0.06);
+    border: 1.5px solid var(--c-border);
+  }
+  .tab-icon-pub.active-pub {
+    background: var(--c-primary);
+    border-color: var(--c-primary);
+    color: white;
+  }
+
   .tab-label {
     font-size: 10px;
     font-weight: 700;
@@ -153,17 +176,6 @@
     transition: color 0.15s;
   }
 
-  /* Indicador "próximamente" */
-  .tab-dot {
-    position: absolute;
-    top: 8px; right: calc(50% - 14px);
-    width: 5px; height: 5px;
-    border-radius: 50%;
-    background: var(--c-accent);
-    opacity: 0.6;
-  }
-
-  /* Toast */
   .coming-soon-toast {
     position: absolute;
     top: -44px; left: 50%;

@@ -1,13 +1,19 @@
 <script>
   import { onMount } from 'svelte'
   import { currentPage, initAuth } from './stores/auth.js'
-  import Login          from './pages/Login.svelte'
-  import Perfil         from './pages/Perfil.svelte'
-  import Home           from './pages/Home.svelte'
-  import Buscar         from './pages/Buscar.svelte'
-  import AltaComercio   from './pages/AltaComercio.svelte'
-  import DetalleComercio from './pages/DetalleComercio.svelte'
-  import Admin           from './pages/Admin.svelte'
+  import Login            from './pages/Login.svelte'
+  import Perfil           from './pages/Perfil.svelte'
+  import Home             from './pages/Home.svelte'
+  import Buscar           from './pages/Buscar.svelte'
+  import AltaComercio     from './pages/AltaComercio.svelte'
+  import DetalleComercio  from './pages/DetalleComercio.svelte'
+  import Admin            from './pages/Admin.svelte'
+  // Módulo 3 — Precios
+  import Precios          from './pages/Precios.svelte'
+  import ListaPrecios     from './pages/ListaPrecios.svelte'
+  import ListaTematica    from './pages/ListaTematica.svelte'
+  import ComparadorPrecios from './pages/ComparadorPrecios.svelte'
+  import PublicarLanding  from './pages/PublicarLanding.svelte'
 
   onMount(() => { initAuth() })
 
@@ -49,6 +55,23 @@
 
 {:else if basePage === 'admin'}
   <Admin />
+
+<!-- ── Módulo 3: Precios ── -->
+
+{:else if basePage === 'precios-comercio'}
+  <Precios comercioId={pageParam} />
+
+{:else if basePage === 'lista-precios'}
+  <ListaPrecios comercioId={pageParam} />
+
+{:else if basePage === 'lista-tematica'}
+  <ListaTematica />
+
+{:else if basePage === 'comparador'}
+  <ComparadorPrecios productoId={pageParam} />
+
+{:else if basePage === 'publicar'}
+  <PublicarLanding />
 
 {/if}
 

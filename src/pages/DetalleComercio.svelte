@@ -112,6 +112,10 @@
   }
 
   function volver() { currentPage.set('buscar') }
+  
+  function verPrecios() {
+	currentPage.set('precios-comercio:' + comercioId)
+  }
 </script>
 
 <div class="app-shell detalle-shell">
@@ -224,6 +228,20 @@
           </div>
         </div>
       </div>
+	  
+	  <!-- Botón: Ver precios -->
+	  <div class="accion-section">
+		<button class="btn-precios-cta" on:click={verPrecios}>
+		  <span class="precios-cta-icon">🏷️</span>
+		  <div class="precios-cta-text">
+			<span class="precios-cta-titulo">Ver precios</span>
+			<span class="precios-cta-sub">Consultá y cargá precios de este comercio</span>
+		  </div>
+		  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+			<polyline points="9 18 15 12 9 6"/>
+		  </svg>
+		</button>
+	  </div>
 
       <!-- Acción: verificar -->
       <div class="acciones-section">
@@ -689,4 +707,30 @@
     from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
+  
+  .accion-section {
+    margin: 0 16px 12px;
+  }
+ 
+  .btn-precios-cta {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--c-surface);
+    border: 1.5px solid var(--c-primary);
+    border-radius: var(--r-lg);
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .btn-precios-cta:hover   { background: rgba(27,107,58,0.06); }
+  .btn-precios-cta:active  { transform: scale(0.98); }
+ 
+  .precios-cta-icon  { font-size: 22px; }
+  .precios-cta-text  { flex: 1; }
+  .precios-cta-titulo { display: block; font-size: 15px; font-weight: 700; color: var(--c-primary); }
+  .precios-cta-sub    { display: block; font-size: 12px; color: var(--c-text-light); margin-top: 1px; }
 </style>
