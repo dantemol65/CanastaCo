@@ -67,9 +67,9 @@
   ]
 </script>
 
-<nav class="bottom-nav" aria-label="Navegaci®Æn principal">
+<nav class="bottom-nav" aria-label="Navegaci√≥n principal">
   {#if comingSoon}
-    <div class="coming-soon-toast" role="status">?? Pr®Æximamente</div>
+    <div class="coming-soon-toast" role="status"> Pr√≥ximamente</div>
   {/if}
 
   {#each tabs as tab}
@@ -153,7 +153,7 @@
     transition: color 0.15s;
   }
 
-  /* Indicador "pr®Æximamente" */
+  /* Indicador "pr√≥ximamente" */
   .tab-dot {
     position: absolute;
     top: 8px; right: calc(50% - 14px);

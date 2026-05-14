@@ -25,19 +25,19 @@
       ? distanciaKm(posicion.lat, posicion.lng, comercio.lat, comercio.lng)
       : null
 
-  // ¿ya verifiqué este comercio?
+  // Â¿ya verifiquÃ© este comercio?
   $: if (comercio && user) {
     yaVerifique = comercio.verificaciones?.some(v => v.uid === user.uid) || false
   }
 
   onMount(async () => {
-    // No limpiar el store si ya tiene este comercio (navegación rápida)
+    // No limpiar el store si ya tiene este comercio (navegaciÃ³n rÃ¡pida)
     if ($comercioActivo?.id !== comercioId) comercioActivo.set(null)
     const c = await cargarComercio(comercioId)
     if (!c) {
       error = navigator.onLine
         ? 'Comercio no encontrado.'
-        : 'Sin conexión — este comercio no está guardado localmente.'
+        : 'Sin conexiÃ³n - este comercio no estÃ¡ guardado localmente.'
     }
     cargando = false
     obtenerPosicion().then(p => posicion = p).catch(() => {})
@@ -49,15 +49,15 @@
     try {
       await verificarComercio(comercioId)
       yaVerifique = true
-      showToast('¡Gracias por verificar este comercio!')
+      showToast('Â¡Gracias por verificar este comercio!')
     } catch (e) {
-      showToast('Error al verificar. Intentá de nuevo.')
+      showToast('Error al verificar. IntentÃ¡ de nuevo.')
     } finally {
       verificando = false
     }
   }
 
-  // Reclamo con código privado
+  // Reclamo con cÃ³digo privado
   let mostrarFormReclamo = false
   let codigoReclamo      = ''
   let reclamando         = false
@@ -76,7 +76,7 @@
     try {
       await reclamarConCodigo(comercioId, codigoReclamo)
       mostrarFormReclamo = false
-      showToast('¡Comercio reclamado exitosamente! Sos el dueño verificado.')
+      showToast('Â¡Comercio reclamado exitosamente! Sos el dueÃ±o verificado.')
     } catch (e) {
       errorReclamo = e.message
     } finally {
@@ -106,7 +106,7 @@
     if (result) {
       abrirMapa(result.lat, result.lng)
     } else {
-      // Fallback: búsqueda por texto con contexto
+      // Fallback: bÃºsqueda por texto con contexto
       abrirMapa(null, null, comercio.nombre + ' ' + comercio.direccion, contextoMapa)
     }
   }
@@ -165,7 +165,7 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
                 <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
               </svg>
-              {formatDistancia(distancia)} de tu ubicación
+              {formatDistancia(distancia)} de tu ubicaciÃ³n
             </p>
           {/if}
         </div>
@@ -182,7 +182,7 @@
               </svg>
             </div>
             <div class="info-text">
-              <span class="info-label">Dirección</span>
+              <span class="info-label">DirecciÃ³n</span>
               <span class="info-value">{comercio.direccion}</span>
             </div>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-light)" stroke-width="2">
@@ -200,13 +200,13 @@
               </svg>
             </div>
             <div class="info-text">
-              <span class="info-label">Descripción</span>
+              <span class="info-label">DescripciÃ³n</span>
               <span class="info-value">{comercio.descripcion}</span>
             </div>
           </div>
         {/if}
 
-        <!-- Estado de verificación -->
+        <!-- Estado de verificaciÃ³n -->
         <div class="info-row no-action">
           <div class="info-icon-wrap">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--c-primary)" stroke-width="2">
@@ -218,41 +218,41 @@
             <span class="estado-chip" style="color:{estadoInfo.color};background:{estadoInfo.bg}">
               {estadoInfo.label}
               {#if comercio.totalVerificaciones > 0}
-                · {comercio.totalVerificaciones} verificación{comercio.totalVerificaciones !== 1 ? 'es' : ''}
+                - {comercio.totalVerificaciones} verificaciÃ³n{comercio.totalVerificaciones !== 1 ? 'es' : ''}
               {/if}
             </span>
           </div>
         </div>
       </div>
 
-      <!-- Acción: verificar -->
+      <!-- AcciÃ³n: verificar -->
       <div class="acciones-section">
-        <h3 class="acciones-titulo">¿Conocés este comercio?</h3>
+        <h3 class="acciones-titulo">Â¿ConocÃ©s este comercio?</h3>
 
         {#if yaVerifique}
           <div class="verificado-msg">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
               <polyline points="20 6 9 17 4 12" stroke="var(--c-primary)" stroke-width="2.5" fill="none"/>
             </svg>
-            Ya verificaste este comercio. ¡Gracias!
+            Ya verificaste este comercio. Â¡Gracias!
           </div>
         {:else}
           <button class="btn-verificar" on:click={handleVerificar} disabled={verificando}>
             {#if verificando}
-              <div class="mini-spinner"></div> Verificando…
+              <div class="mini-spinner"></div> Verificando..
             {:else}
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
               </svg>
-              Confirmar que existe en esta dirección
+              Confirmar que existe en esta direcciÃ³n
             {/if}
           </button>
           <p class="verificar-desc">
-            Al verificar confirmás que este comercio existe y está en la dirección indicada. Con 3 verificaciones queda confirmado automáticamente.
+            Al verificar confirmÃ¡s que este comercio existe y estÃ¡ en la direcciÃ³n indicada. Con 3 verificaciones queda confirmado automÃ¡ticamente.
           </p>
         {/if}
 
-        <!-- Reclamar si es el dueño -->
+        <!-- Reclamar si es el dueÃ±o -->
         {#if !comercio.reclamadoPor && user && !comercio.reclamoBloqueado}
           {#if !mostrarFormReclamo}
             <button class="btn-reclamar" on:click={toggleFormReclamo}>
@@ -260,12 +260,12 @@
                 <rect x="2" y="7" width="20" height="14" rx="2"/>
                 <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
               </svg>
-              Soy el dueño — reclamar gestión
+              Soy el dueÃ±o - reclamar gestiÃ³n
             </button>
           {:else}
             <div class="reclamo-form">
               <p class="reclamo-desc">
-                Ingresá el código de 6 caracteres que figura en la credencial física entregada por el administrador.
+                IngresÃ³ el cÃ³digo de 6 caracteres que figura en la credencial fÃ­sica entregada por el administrador.
               </p>
               <input
                 class="reclamo-input"
@@ -283,7 +283,7 @@
               <div class="reclamo-btns">
                 <button class="btn-reclamo-cancel" on:click={toggleFormReclamo}>Cancelar</button>
                 <button class="btn-reclamo-ok" on:click={handleReclamar} disabled={reclamando || !codigoReclamo.trim()}>
-                  {#if reclamando}Verificando…{:else}Confirmar{/if}
+                  {#if reclamando}Verificandoï¿½{:else}Confirmar{/if}
                 </button>
               </div>
             </div>
@@ -291,7 +291,7 @@
 
         {:else if comercio.reclamoBloqueado}
           <div class="reclamo-bloqueado">
-            ?? Este comercio está bloqueado por intentos fallidos. Contactá al administrador.
+            ?? Este comercio estÃ¡ bloqueado por intentos fallidos. ContactÃ¡ al administrador.
           </div>
 
         {:else if comercio.reclamadoPor === user?.uid}
@@ -300,18 +300,18 @@
               <rect x="2" y="7" width="20" height="14" rx="2"/>
               <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
             </svg>
-            Sos el dueño verificado de este comercio
+            Sos el dueÃ±o verificado de este comercio
           </div>
         {/if}
       </div>
 
-      <!-- Próximamente: precios -->
+      <!-- PrÃ³ximamente: precios -->
       <div class="proximos-section">
         <div class="proximos-card">
           <span class="proximos-icon">??</span>
           <div>
             <p class="proximos-titulo">Precios</p>
-            <p class="proximos-desc">Próximamente podrás ver y cargar precios de este comercio.</p>
+            <p class="proximos-desc">PrÃ³ximamente podrÃ¡s ver y cargar precios de este comercio.</p>
           </div>
           <span class="proximos-badge">M3</span>
         </div>
@@ -531,7 +531,7 @@
     font-weight: 600;
   }
 
-  /* Próximos módulos */
+  /* Prï¿½ximos mï¿½dulos */
   .proximos-section {}
   .proximos-card {
     display: flex;
