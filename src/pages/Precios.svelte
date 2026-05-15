@@ -20,6 +20,7 @@
   } from '../stores/precios.js'
   import BottomNav from '../components/BottomNav.svelte'
   import EscanerCodigo from '../components/EscanerCodigo.svelte'
+  import BotonVoz from '../components/BotonVoz.svelte'
 
   export let comercioId = ''
 
@@ -151,7 +152,50 @@
   }
 
   // Código leído pero sin datos OFF → abrir form con código como nombre
-  function onCodigoSinProducto(e) {
+  // ── Voz ──────────────────────────────────────────────────────────────
+
+  async function onResultadoVoz(e) {
+    const datos = e.detail  // { producto, marca, unidad, precio, esOferta, textoRaw }
+
+    if (!datos.producto) return  // nada útil
+
+    // Buscar si el producto ya existe en el catálogo local
+    const q = datos.producto.toLowerCase()
+    const existente = $productos.find(p =>
+      p.nombreNorm === q ||
+      p.nombre.toLowerCase().includes(q) ||
+      q.includes(p.nombre.toLowerCase())
+    )
+
+    if (existente) {
+      productoSel  = existente
+      busquedaProd = existente.nombre
+      paso = 2
+    } else {
+      busquedaProd   = datos.producto
+      nuevaMarca     = datos.marca     || ''
+      nuevaUnidad    = datos.unidad    || 'u'
+      nuevaCategoria = 'otros'
+      modoNuevo      = true
+      paso = 1
+    }
+
+    // Si además viene el precio → rellenar paso 2 directamente
+    if (datos.precio) {
+      precioValor = String(datos.precio)
+      esOferta    = datos.esOferta || false
+      paso = 2
+    }
+
+    // Asegurarse de que el form esté abierto
+    mostrarForm = true
+  }
+
+  function onErrorVoz(e) {
+    // El componente ya muestra el error internamente
+  }
+
+    function onCodigoSinProducto(e) {
     const { codigoBarras } = e.detail
     mostrarEscaner = false
     busquedaProd   = ''
@@ -444,7 +488,7 @@
       </svg>
       Cargar precio
     </button>
-    <button class="fab-escanear" on:click={abrirEscaner} aria-label="Escanear código de barras" title="Escanear código de barras">
+    <button class="fab-icono" on:click={abrirEscaner} aria-label="Escanear código de barras" title="Escanear código">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <path d="M3 9V5h4M21 9V5h-4M3 15v4h4M21 15v4h-4"/>
         <line x1="7"  y1="12" x2="7.01"  y2="12" stroke-width="3"/>
@@ -452,6 +496,13 @@
         <line x1="15" y1="12" x2="17"    y2="12" stroke-width="3"/>
       </svg>
     </button>
+    <!-- Botón de voz: usa BotonVoz pero estilizado como FAB icono -->
+    <div class="fab-voz-wrap">
+      <BotonVoz
+        on:resultado={onResultadoVoz}
+        on:error={onErrorVoz}
+      />
+    </div>
   </div>
 {/if}
 
@@ -481,26 +532,34 @@
         {#if paso === 1}
 
           <div class="form-group">
-            <div class="search-input-wrap">
-              <svg class="search-icon-inner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-              <input
-                id="busq-prod"
-                type="text"
-                class="form-input search-prod-input"
-                placeholder="Leche, Tomate, Pan lactal…"
-                bind:value={busquedaProd}
-                bind:this={inputBusqEl}
-                autocomplete="off"
-                autocorrect="off"
-                autocapitalize="words"
+            <div class="search-row">
+              <div class="search-input-wrap" style="flex:1">
+                <svg class="search-icon-inner" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                  <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                  id="busq-prod"
+                  type="text"
+                  class="form-input search-prod-input"
+                  placeholder="Leche, Tomate, Pan lactal…"
+                  bind:value={busquedaProd}
+                  bind:this={inputBusqEl}
+                  autocomplete="off"
+                  autocorrect="off"
+                  autocapitalize="words"
+                />
+                {#if busquedaProd}
+                  <button class="search-clear-btn" on:click={() => busquedaProd = ''} tabindex="-1">✕</button>
+                {/if}
+              </div>
+              <BotonVoz
+                on:resultado={onResultadoVoz}
+                on:error={onErrorVoz}
               />
-              {#if busquedaProd}
-                <button class="search-clear-btn" on:click={() => busquedaProd = ''} tabindex="-1">✕</button>
-              {/if}
             </div>
-            <p class="form-hint" style="margin-top:6px">Escribí al menos 2 letras para buscar o crear un producto nuevo.</p>
+            <p class="form-hint" style="margin-top:6px">
+              Escribí el nombre o usá el <strong>🎤 micrófono</strong> para dictar el producto y el precio juntos.
+            </p>
           </div>
 
           <!-- Sugerencias del catálogo -->
@@ -777,7 +836,7 @@
     -webkit-tap-highlight-color: transparent;
   }
   .fab-cargar:active { transform: scale(0.97); }
-  .fab-escanear {
+  .fab-icono {
     width: 52px; height: 52px; border-radius: var(--r-full);
     background: var(--c-surface); color: var(--c-primary);
     border: 2px solid var(--c-primary);
@@ -786,8 +845,28 @@
     transition: all 0.18s; flex-shrink: 0;
     -webkit-tap-highlight-color: transparent;
   }
-  .fab-escanear:active { transform: scale(0.95); }
-  .fab-escanear:hover  { background: rgba(27,107,58,0.06); }
+  .fab-icono:active { transform: scale(0.95); }
+  .fab-icono:hover  { background: rgba(27,107,58,0.06); }
+
+  /* Wrapper del BotonVoz en el FAB: iguala el tamaño del fab-icono */
+  .fab-voz-wrap :global(.btn-voz) {
+    width: 52px !important;
+    height: 52px !important;
+    border-width: 2px !important;
+    border-color: var(--c-primary) !important;
+    color: var(--c-primary) !important;
+    box-shadow: var(--s-md);
+  }
+  .fab-voz-wrap :global(.btn-voz.escuchando) {
+    border-color: #DC2626 !important;
+  }
+  /* Ocultar el feedback del BotonVoz cuando está en el FAB */
+  .fab-voz-wrap :global(.voz-feedback) { display: none; }
+
+  /* Search row: input + botón de voz en línea */
+  .search-row {
+    display: flex; align-items: center; gap: 8px;
+  }
 
   /* ── Bottom sheet ─────────────────────────────────────────── */
   .sheet-overlay {

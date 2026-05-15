@@ -27,6 +27,7 @@
   let codigoLeido  = ''
   let resultadoOFF = null
   let flashActivo  = false
+  let detectando   = false   // guard: evita procesar dos códigos simultáneamente
 
   // Para el "visor" animado
   let beepAudio    = null
@@ -100,6 +101,10 @@
   // ── Código detectado → buscar en OFF ─────────────────────────────────
 
   async function onCodigoDetectado(codigo) {
+    // Guard: si ya estamos procesando un código, ignorar
+    if (detectando) return
+    detectando = true
+
     pararLoop()
     flashActivo = true
     codigoLeido = codigo
@@ -107,9 +112,11 @@
     playBeep()
     setTimeout(() => flashActivo = false, 300)
 
+    // Capturar el resultado en variable local para que confirmarProducto
+    // siempre despache ESTE resultado y no uno sobreescrito por un re-scan
     const resultado = await buscarEnOFF(codigo)
     if (resultado) {
-      resultadoOFF = resultado
+      resultadoOFF = { ...resultado }   // copia defensiva
       estado = 'encontrado'
     } else {
       estado = 'noEncontrado'
@@ -117,7 +124,8 @@
   }
 
   function confirmarProducto() {
-    dispatch('encontrado', resultadoOFF)
+    // Dispatch de la copia local capturada en este ciclo de escaneo
+    dispatch('encontrado', { ...resultadoOFF })
   }
 
   function usarSoloCodigoManual() {
@@ -127,8 +135,11 @@
   function reescanear() {
     codigoLeido  = ''
     resultadoOFF = null
+    detectando   = false
     estado = 'escaneando'
-    iniciarLoop()
+    // Delay: da tiempo al usuario para apartar la cámara del producto anterior
+    // sin el delay el loop detecta el mismo código inmediatamente
+    setTimeout(iniciarLoop, 1500)
   }
 
   function cancelar() {
