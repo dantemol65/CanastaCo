@@ -43,6 +43,28 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
         navigateFallback: 'index.html',
         runtimeCaching: [
+          // ── APIs externas: NUNCA cachear, siempre red directa ─────────────
+          {
+            urlPattern: /^https:\/\/world\.openfoodfacts\.org\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/world\.openbeautyfacts\.org\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/world\.openproductsfacts\.org\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/apis\.datos\.gob\.ar\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          {
+            urlPattern: /^https:\/\/api\.qrserver\.com\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          // ── Fonts y avatares: CacheFirst ─────────────────────────────────
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
