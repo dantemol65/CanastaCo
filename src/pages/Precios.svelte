@@ -19,6 +19,7 @@
     freshness, freshnessLabel, formatPrecio, esPrecioVencido,
   } from '../stores/precios.js'
   import BottomNav from '../components/BottomNav.svelte'
+  import EscanerCodigo from '../components/EscanerCodigo.svelte'
 
   export let comercioId = ''
 
@@ -30,6 +31,7 @@
 
   // ── Estado del formulario inline ──────────────────────────────────────
   let mostrarForm    = false
+  let mostrarEscaner = false
   let paso           = 1      // 1: buscar producto  2: ingresar precio
 
   // Paso 1
@@ -117,9 +119,56 @@
     precioValor    = ''
     esOferta       = false
     vencimiento    = ''
+    if (inputBusqEl) inputBusqEl.placeholder = 'Leche, Tomate, Pan lactal…'
   }
 
   function cerrarForm() { mostrarForm = false }
+
+  function abrirEscaner() { mostrarEscaner = true }
+  function cerrarEscaner() { mostrarEscaner = false }
+
+  // Producto identificado por OFF → pre-llenar y pasar al paso 2
+  function onProductoEscaneado(e) {
+    const p = e.detail
+    mostrarEscaner = false
+    // Buscar si ya existe en el catálogo local
+    const existente = $productos.find(
+      prod => prod.nombreNorm === p.nombre.trim().toLowerCase()
+    )
+    if (existente) {
+      productoSel  = existente
+      busquedaProd = existente.nombre
+    } else {
+      // Pre-llenar formulario de nuevo producto
+      busquedaProd   = p.nombre
+      nuevaMarca     = p.marca || ''
+      nuevaCategoria = p.categoria || 'otros'
+      nuevaUnidad    = p.unidad || 'u'
+      modoNuevo      = true
+    }
+    mostrarForm = true
+    paso = productoSel ? 2 : 1
+  }
+
+  // Código leído pero sin datos OFF → abrir form con código como nombre
+  function onCodigoSinProducto(e) {
+    const { codigoBarras } = e.detail
+    mostrarEscaner = false
+    busquedaProd   = ''
+    nuevaMarca     = ''
+    nuevaCategoria = 'otros'
+    nuevaUnidad    = 'u'
+    modoNuevo      = true
+    mostrarForm    = true
+    paso           = 1
+    // Dar foco al input con hint del código
+    tick().then(() => {
+      if (inputBusqEl) {
+        inputBusqEl.placeholder = `Código: ${codigoBarras} — escribí el nombre`
+        inputBusqEl.focus()
+      }
+    })
+  }
 
   function seleccionarProducto(p) {
     productoSel  = p
@@ -386,14 +435,24 @@
 {/if}
 
 <!-- FAB: fuera del app-shell -->
-{#if !cargando && !error && !mostrarForm}
-  <button class="fab-cargar" on:click={abrirForm} aria-label="Cargar precio">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
-      <line x1="12" y1="5" x2="12" y2="19"/>
-      <line x1="5"  y1="12" x2="19" y2="12"/>
-    </svg>
-    Cargar precio
-  </button>
+{#if !cargando && !error && !mostrarForm && !mostrarEscaner}
+  <div class="fab-grupo">
+    <button class="fab-cargar" on:click={abrirForm} aria-label="Cargar precio">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5"  y1="12" x2="19" y2="12"/>
+      </svg>
+      Cargar precio
+    </button>
+    <button class="fab-escanear" on:click={abrirEscaner} aria-label="Escanear código de barras" title="Escanear código de barras">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M3 9V5h4M21 9V5h-4M3 15v4h4M21 15v4h-4"/>
+        <line x1="7"  y1="12" x2="7.01"  y2="12" stroke-width="3"/>
+        <line x1="11" y1="12" x2="11.01" y2="12" stroke-width="3"/>
+        <line x1="15" y1="12" x2="17"    y2="12" stroke-width="3"/>
+      </svg>
+    </button>
+  </div>
 {/if}
 
 <!-- ── Bottom sheet: FUERA del app-shell para evitar overflow:hidden ── -->
@@ -587,6 +646,14 @@
     </div>
 {/if}
 
+{#if mostrarEscaner}
+  <EscanerCodigo
+    on:encontrado={onProductoEscaneado}
+    on:noEncontrado={onCodigoSinProducto}
+    on:cancelar={cerrarEscaner}
+  />
+{/if}
+
 <BottomNav active="buscar" />
 
 <style>
@@ -690,22 +757,37 @@
   .comparar-btn:hover { background: rgba(27,107,58,0.08); }
   .report-btn:hover  { background: #FEE2E2; }
 
-  /* FAB */
-  .fab-cargar {
+  /* FAB grupo */
+  .fab-grupo {
     position: fixed;
     bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
     left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    width: calc(var(--app-width) - 48px); max-width: 380px;
+    z-index: 60;
+  }
+  .fab-cargar {
+    flex: 1;
     background: var(--c-primary); color: white;
     border: none; border-radius: var(--r-full);
-    padding: 14px 24px; font-size: 15px; font-weight: 700;
-    display: flex; align-items: center; gap: 8px;
+    padding: 14px 20px; font-size: 15px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
     box-shadow: var(--s-lg); cursor: pointer;
-    z-index: 60; transition: all 0.18s;
+    transition: all 0.18s;
     -webkit-tap-highlight-color: transparent;
-    width: calc(var(--app-width) - 48px); max-width: 380px;
-    justify-content: center;
   }
-  .fab-cargar:active { transform: translateX(-50%) scale(0.97); }
+  .fab-cargar:active { transform: scale(0.97); }
+  .fab-escanear {
+    width: 52px; height: 52px; border-radius: var(--r-full);
+    background: var(--c-surface); color: var(--c-primary);
+    border: 2px solid var(--c-primary);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--s-md); cursor: pointer;
+    transition: all 0.18s; flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fab-escanear:active { transform: scale(0.95); }
+  .fab-escanear:hover  { background: rgba(27,107,58,0.06); }
 
   /* ── Bottom sheet ─────────────────────────────────────────── */
   .sheet-overlay {
