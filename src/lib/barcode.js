@@ -99,10 +99,21 @@ export function cerrarCamara(stream) {
 // LOOKUP DE PRODUCTOS — cadena de 3 APIs gratuitas sin registro
 // 1° Open Food Facts  → alimentos y bebidas
 // 2° Open Beauty Facts → higiene, cosmética, farmacia
-// 3° Go UPC           → todo lo demás (librería, limpieza, electro, etc.)
+// 3° UPC Item DB      → todo lo demás (librería, limpieza, electro, etc.)
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Helpers compartidos ───────────────────────────────────────────────────
+
+/**
+ * fetch con timeout manual — compatible con todos los browsers móviles.
+ * AbortSignal.timeout() no está disponible en Android WebView < Chrome 103.
+ */
+function fetchConTimeout(url, ms = 7000) {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), ms)
+  return fetch(url, { signal: ctrl.signal })
+    .finally(() => clearTimeout(timer))
+}
 
 function capitalizar(str) {
   if (!str) return ''
@@ -158,7 +169,7 @@ async function buscarOFF(codigo) {
   try {
     const campos = 'product_name,product_name_es,brands,categories_tags,quantity,image_front_small_url'
     const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(codigo)}?fields=${campos}`
-    const res  = await fetch(url, { signal: AbortSignal.timeout(6000) })
+    const res  = await fetchConTimeout(url, 7000)
     if (!res.ok) return null
     const json = await res.json()
     if (json.status !== 1 || !json.product) return null
@@ -176,7 +187,7 @@ async function buscarOFF(codigo) {
       p.image_front_small_url || null,
       'Open Food Facts',
     )
-  } catch { return null }
+  } catch (e) { throw e }  // propagar para que buscarEnOFF muestre el error
 }
 
 // ── 2. Open Beauty Facts ──────────────────────────────────────────────────
@@ -185,7 +196,7 @@ async function buscarOBF(codigo) {
   try {
     const campos = 'product_name,brands,categories_tags,quantity,image_front_small_url'
     const url = `https://world.openbeautyfacts.org/api/v2/product/${encodeURIComponent(codigo)}?fields=${campos}`
-    const res  = await fetch(url, { signal: AbortSignal.timeout(6000) })
+    const res  = await fetchConTimeout(url, 7000)
     if (!res.ok) return null
     const json = await res.json()
     if (json.status !== 1 || !json.product) return null
@@ -207,36 +218,35 @@ async function buscarOBF(codigo) {
       p.image_front_small_url || null,
       'Open Beauty Facts',
     )
-  } catch { return null }
+  } catch (e) { throw e }  // propagar
 }
 
-// ── 3. Go UPC ─────────────────────────────────────────────────────────────
+// ── 3. UPC Item DB (gratuito sin API key, 100 req/día) ───────────────────
 
-async function buscarGoUPC(codigo) {
+async function buscarUPCItemDB(codigo) {
   try {
-    const url = `https://go-upc.com/api/v1/code/${encodeURIComponent(codigo)}`
-    const res  = await fetch(url, { signal: AbortSignal.timeout(7000) })
+    const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(codigo)}`
+    const res  = await fetchConTimeout(url, 7000)
     if (!res.ok) return null
     const json = await res.json()
-    if (!json.product?.name) return null
+    const item = json.items?.[0]
+    if (!item?.title) return null
 
-    const p      = json.product
-    const nombre = capitalizar(p.name || '')
+    const nombre = capitalizar(item.title || '')
     if (!nombre) return null
 
-    // Go UPC devuelve category como string libre
-    const cats = [p.category || '', p.description || ''].filter(Boolean)
+    const cats = [item.category || '', item.description || ''].filter(Boolean)
 
     return resultado(
       codigo,
       nombre,
-      p.brand || '',
+      item.brand || '',
       mapearCategoria(cats),
-      'u',           // Go UPC no siempre devuelve cantidad
-      p.imageUrl || null,
-      'Go UPC',
+      normalizarUnidad(item.size || ''),
+      item.images?.[0] || null,
+      'UPC Item DB',
     )
-  } catch { return null }
+  } catch (e) { throw e }  // propagar
 }
 
 // ── Función principal exportada ───────────────────────────────────────────
@@ -260,20 +270,28 @@ export async function buscarEnOFF(codigo, onLog = null) {
   const APIs = [
     { nombre: 'Open Food Facts',   fn: buscarOFF  },
     { nombre: 'Open Beauty Facts', fn: buscarOBF  },
-    { nombre: 'Go UPC',            fn: buscarGoUPC },
+    { nombre: 'UPC Item DB',        fn: buscarUPCItemDB },
   ]
 
   for (const { nombre, fn } of APIs) {
     const t0 = Date.now()
-    const r  = await fn(codigo)
+    let r = null
+    let errorMsg = ''
+    try {
+      r = await fn(codigo)
+    } catch (e) {
+      errorMsg = e?.message || String(e)
+    }
     const ms = Date.now() - t0
 
     const entrada = r
       ? `✅ ${nombre} → "${r.nombre}" (${ms}ms)`
-      : `❌ ${nombre} → no encontrado (${ms}ms)`
+      : errorMsg
+        ? `💥 ${nombre} → ERROR: ${errorMsg} (${ms}ms)`
+        : `❌ ${nombre} → no encontrado (${ms}ms)`
 
     log.push(entrada)
-    onLog?.(entrada)  // siempre notificar al caller, él decide si mostrar
+    onLog?.(entrada)
 
     if (r) {
       if (DEV) {
