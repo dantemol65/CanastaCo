@@ -99,7 +99,7 @@ export function cerrarCamara(stream) {
 // LOOKUP DE PRODUCTOS — cadena de 3 APIs gratuitas sin registro
 // 1° Open Food Facts  → alimentos y bebidas
 // 2° Open Beauty Facts → higiene, cosmética, farmacia
-// 3° UPC Item DB      → todo lo demás (librería, limpieza, electro, etc.)
+// 3° Open Products Facts → librería, limpieza, electrónica, etc.
 // ══════════════════════════════════════════════════════════════════════════
 
 // ── Helpers compartidos ───────────────────────────────────────────────────
@@ -167,15 +167,20 @@ function mapearCategoria(textos = []) {
 
 async function buscarOFF(codigo) {
   try {
-    const campos = 'product_name,product_name_es,brands,categories_tags,quantity,image_front_small_url'
-    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(codigo)}?fields=${campos}`
+    // v0: endpoint original, CORS garantizado, más amplio soporte
+    const url = `https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(codigo)}.json`
     const res  = await fetchConTimeout(url, 7000)
     if (!res.ok) return null
     const json = await res.json()
     if (json.status !== 1 || !json.product) return null
 
     const p      = json.product
-    const nombre = capitalizar(p.product_name_es?.trim() || p.product_name?.trim() || '')
+    const nombre = capitalizar(
+      p.product_name_es?.trim() ||
+      p.product_name?.trim()    ||
+      p.generic_name_es?.trim() ||
+      p.generic_name?.trim()    || ''
+    )
     if (!nombre) return null
 
     return resultado(
@@ -187,7 +192,7 @@ async function buscarOFF(codigo) {
       p.image_front_small_url || null,
       'Open Food Facts',
     )
-  } catch (e) { throw e }  // propagar para que buscarEnOFF muestre el error
+  } catch (e) { throw e }
 }
 
 // ── 2. Open Beauty Facts ──────────────────────────────────────────────────
@@ -221,32 +226,34 @@ async function buscarOBF(codigo) {
   } catch (e) { throw e }  // propagar
 }
 
-// ── 3. UPC Item DB (gratuito sin API key, 100 req/día) ───────────────────
+// ── 3. Open Products Facts (OFF para no-alimentos: librería, limpieza, etc) ──
 
-async function buscarUPCItemDB(codigo) {
+async function buscarOPF(codigo) {
   try {
-    const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(codigo)}`
+    const url = `https://world.openproductsfacts.org/api/v0/product/${encodeURIComponent(codigo)}.json`
     const res  = await fetchConTimeout(url, 7000)
     if (!res.ok) return null
     const json = await res.json()
-    const item = json.items?.[0]
-    if (!item?.title) return null
+    if (json.status !== 1 || !json.product) return null
 
-    const nombre = capitalizar(item.title || '')
+    const p      = json.product
+    const nombre = capitalizar(
+      p.product_name_es?.trim() ||
+      p.product_name?.trim()    ||
+      p.generic_name?.trim()    || ''
+    )
     if (!nombre) return null
-
-    const cats = [item.category || '', item.description || ''].filter(Boolean)
 
     return resultado(
       codigo,
       nombre,
-      item.brand || '',
-      mapearCategoria(cats),
-      normalizarUnidad(item.size || ''),
-      item.images?.[0] || null,
-      'UPC Item DB',
+      p.brands?.split(',')[0]?.trim() || '',
+      mapearCategoria(p.categories_tags || []),
+      normalizarUnidad(p.quantity || ''),
+      p.image_front_small_url || null,
+      'Open Products Facts',
     )
-  } catch (e) { throw e }  // propagar
+  } catch (e) { throw e }
 }
 
 // ── Función principal exportada ───────────────────────────────────────────
@@ -270,7 +277,7 @@ export async function buscarEnOFF(codigo, onLog = null) {
   const APIs = [
     { nombre: 'Open Food Facts',   fn: buscarOFF  },
     { nombre: 'Open Beauty Facts', fn: buscarOBF  },
-    { nombre: 'UPC Item DB',        fn: buscarUPCItemDB },
+    { nombre: 'Open Products Facts', fn: buscarOPF },
   ]
 
   for (const { nombre, fn } of APIs) {
