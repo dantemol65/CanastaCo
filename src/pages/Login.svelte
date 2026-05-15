@@ -1,17 +1,33 @@
 <script>
-  import { signInWithGoogle, authError } from '../stores/auth.js'
+  import { signInWithGoogle, signInWithEmail, authError } from '../stores/auth.js'
 
-  let loading = false
-  let isOffline = !navigator.onLine
+  let loading    = false
+  let isOffline  = !navigator.onLine
+  let modTesting = false   // se activa al tocar "🧪 Acceso testing"
+  let email      = ''
+  let password   = ''
+  let loadingEmail = false
 
   window.addEventListener('online',  () => { isOffline = false })
   window.addEventListener('offline', () => { isOffline = true  })
 
-  async function handleLogin() {
+  async function handleGoogle() {
     if (loading || isOffline) return
     loading = true
     await signInWithGoogle()
     loading = false
+  }
+
+  async function handleEmail() {
+    if (loadingEmail || !email || !password) return
+    loadingEmail = true
+    await signInWithEmail(email, password)
+    loadingEmail = false
+  }
+
+  function toggleTesting() {
+    modTesting = !modTesting
+    authError.set(null)
   }
 </script>
 
@@ -34,18 +50,13 @@
     <div class="brand fade-in">
       <div class="logo-mark">
         <svg width="56" height="56" viewBox="0 0 56 56" fill="none">
-          <!-- Canasta estilizada -->
           <rect width="56" height="56" rx="16" fill="white" fill-opacity="0.15"/>
-          <!-- Arco superior -->
           <path d="M14 32 C16 20, 40 20, 42 32" stroke="white" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-          <!-- Base de la canasta -->
           <path d="M10 32 L46 32 L43 44 Q42 46 40 46 L16 46 Q14 46 13 44 Z" fill="white" fill-opacity="0.25"/>
           <path d="M10 32 L46 32 L43 44 Q42 46 40 46 L16 46 Q14 46 13 44 Z" stroke="white" stroke-width="2" fill="none"/>
-          <!-- Líneas de la canasta -->
           <line x1="22" y1="32" x2="20" y2="46" stroke="white" stroke-width="1.5" stroke-opacity="0.6"/>
           <line x1="28" y1="32" x2="28" y2="46" stroke="white" stroke-width="1.5" stroke-opacity="0.6"/>
           <line x1="34" y1="32" x2="36" y2="46" stroke="white" stroke-width="1.5" stroke-opacity="0.6"/>
-          <!-- Precio tag -->
           <rect x="30" y="10" width="18" height="14" rx="4" fill="var(--c-accent)" />
           <text x="39" y="21" text-anchor="middle" font-size="9" font-weight="700" fill="white" font-family="sans-serif">$</text>
         </svg>
@@ -61,23 +72,25 @@
       {#if isOffline}
         <div class="offline-msg">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="1" y1="1" x2="23" y2="23"></line>
-            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"></path>
-            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"></path>
-            <path d="M10.71 5.05A16 16 0 0 1 22.56 9"></path>
-            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"></path>
-            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path>
-            <line x1="12" y1="20" x2="12.01" y2="20"></line>
+            <line x1="1" y1="1" x2="23" y2="23"/>
+            <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+            <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+            <path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
+            <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+            <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+            <line x1="12" y1="20" x2="12.01" y2="20"/>
           </svg>
           <span>Sin conexión. Necesitás red para ingresar por primera vez.</span>
         </div>
-      {:else}
+
+      {:else if !modTesting}
+        <!-- ── Login normal con Google ── -->
         <p class="card-eyebrow">Comunidad de precios</p>
         <h2 class="card-title">Ingresá a tu cuenta</h2>
         <p class="card-sub">Usamos Google para verificar tu identidad de forma segura y sin contraseñas.</p>
 
         {#if $authError}
-          <div class="alert alert-error" style="margin-bottom: 16px;">
+          <div class="alert alert-error" style="margin-bottom: 16px; width:100%">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
             </svg>
@@ -87,7 +100,7 @@
 
         <button
           class="btn btn-google"
-          on:click={handleLogin}
+          on:click={handleGoogle}
           disabled={loading}
           aria-label="Ingresar con Google"
         >
@@ -109,7 +122,98 @@
           Al ingresar aceptás los términos de uso.<br>
           Nunca compartimos tus datos personales.
         </p>
+
+        <!-- Botón discreto para abrir testing -->
+        <button class="btn-testing-toggle" on:click={toggleTesting}>
+          🧪 Acceso testing
+        </button>
+
+      {:else}
+        <!-- ── Login testing con email/password ── -->
+        <div class="testing-header">
+          <span class="testing-badge">🧪 Modo testing</span>
+          <button class="btn-back" on:click={toggleTesting} aria-label="Volver">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+            Volver
+          </button>
+        </div>
+
+        <p class="card-sub" style="margin-bottom:4px">
+          Ingresá con una cuenta de testing creada en Firebase Console.
+        </p>
+
+        {#if $authError}
+          <div class="alert alert-error" style="margin-bottom: 8px; width:100%">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            {$authError}
+          </div>
+        {/if}
+
+        <div class="form-group" style="width:100%">
+          <label class="form-label" for="test-email">Email</label>
+          <input
+            id="test-email"
+            type="email"
+            class="form-input"
+            placeholder="comercio@test.com"
+            bind:value={email}
+            autocomplete="email"
+            autocapitalize="off"
+          />
+        </div>
+
+        <div class="form-group" style="width:100%">
+          <label class="form-label" for="test-pass">Contraseña</label>
+          <input
+            id="test-pass"
+            type="password"
+            class="form-input"
+            placeholder="••••••••"
+            bind:value={password}
+            autocomplete="current-password"
+            on:keydown={e => e.key === 'Enter' && handleEmail()}
+          />
+        </div>
+
+        <button
+          class="btn btn-primary btn-full"
+          on:click={handleEmail}
+          disabled={!email || !password || loadingEmail}
+        >
+          {#if loadingEmail}
+            <div class="btn-spinner" style="border-top-color:white"></div>
+            Ingresando…
+          {:else}
+            Ingresar como tester
+          {/if}
+        </button>
+
+        <!-- Cuentas rápidas de testing -->
+        <div class="cuentas-rapidas">
+          <p class="cuentas-label">Acceso rápido:</p>
+          <div class="cuentas-grid">
+            {#each [
+              { label: 'Usuario',   email: 'usuario@test.com'   },
+              { label: 'Comercio',  email: 'comercio@test.com'  },
+              { label: 'Dedicado',  email: 'dedicado@test.com'  },
+              { label: 'Admin',     email: 'admin@test.com'     },
+            ] as cuenta}
+              <button
+                class="cuenta-chip"
+                on:click={() => { email = cuenta.email; password = 'test1234' }}
+              >
+                {cuenta.label}
+              </button>
+            {/each}
+          </div>
+          <p class="cuentas-hint">Contraseña por defecto: <code>test1234</code></p>
+        </div>
       {/if}
+
     </div>
 
     <!-- Footer -->
@@ -135,35 +239,12 @@
     padding: 32px 24px 48px;
   }
 
-  /* ── Fondo orgánico ── */
-  .bg-orbs {
-    position: absolute; inset: 0; pointer-events: none;
-  }
-  .orb {
-    position: absolute;
-    border-radius: 50%;
-    filter: blur(70px);
-    opacity: 0.18;
-  }
-  .orb-1 {
-    width: 320px; height: 320px;
-    background: #F5A321;
-    top: -80px; right: -60px;
-    animation: float1 8s ease-in-out infinite;
-  }
-  .orb-2 {
-    width: 280px; height: 280px;
-    background: #2D9B57;
-    bottom: 40px; left: -80px;
-    animation: float2 10s ease-in-out infinite;
-  }
-  .orb-3 {
-    width: 200px; height: 200px;
-    background: #fff;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    animation: float3 12s ease-in-out infinite;
-  }
+  /* ── Fondo ── */
+  .bg-orbs { position: absolute; inset: 0; pointer-events: none; }
+  .orb { position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.18; }
+  .orb-1 { width:320px; height:320px; background:#F5A321; top:-80px; right:-60px; animation:float1 8s ease-in-out infinite; }
+  .orb-2 { width:280px; height:280px; background:#2D9B57; bottom:40px; left:-80px; animation:float2 10s ease-in-out infinite; }
+  .orb-3 { width:200px; height:200px; background:#fff; top:50%; left:50%; transform:translate(-50%,-50%); animation:float3 12s ease-in-out infinite; }
   @keyframes float1 { 0%,100%{transform:translateY(0)} 50%{transform:translateY(20px)} }
   @keyframes float2 { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-18px)} }
   @keyframes float3 { 0%,100%{transform:translate(-50%,-50%) scale(1)} 50%{transform:translate(-50%,-50%) scale(1.1)} }
@@ -177,127 +258,101 @@
 
   /* ── Contenido ── */
   .login-content {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 32px;
-    width: 100%;
-    max-width: 340px;
+    position: relative; z-index: 1;
+    display: flex; flex-direction: column;
+    align-items: center; gap: 32px;
+    width: 100%; max-width: 340px;
   }
 
   /* ── Brand ── */
-  .brand {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .logo-mark {
-    filter: drop-shadow(0 8px 24px rgba(0,0,0,0.25));
-    animation: logoFloat 4s ease-in-out infinite;
-  }
-  @keyframes logoFloat {
-    0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)}
-  }
-
-  .brand-name {
-    font-family: var(--f-brand);
-    font-size: 42px;
-    font-weight: 700;
-    color: #fff;
-    line-height: 1;
-    letter-spacing: -1px;
-  }
+  .brand { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .logo-mark { filter: drop-shadow(0 8px 24px rgba(0,0,0,0.25)); animation: logoFloat 4s ease-in-out infinite; }
+  @keyframes logoFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+  .brand-name { font-family: var(--f-brand); font-size: 42px; font-weight: 700; color: #fff; line-height: 1; letter-spacing: -1px; }
   .brand-dot { color: var(--c-accent); }
-
-  .brand-tagline {
-    font-size: 16px;
-    color: rgba(255,255,255,0.75);
-    line-height: 1.55;
-    font-weight: 400;
-  }
+  .brand-tagline { font-size: 16px; color: rgba(255,255,255,0.75); line-height: 1.55; }
 
   /* ── Card ── */
   .login-card {
     width: 100%;
     background: rgba(255,255,255,0.97);
     border-radius: 28px;
-    padding: 28px 24px 24px;
+    padding: 28px 24px 20px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.15);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
   }
-
   .card-eyebrow {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--c-primary);
-    background: var(--c-surface-2);
-    padding: 4px 12px;
-    border-radius: 99px;
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.1em; color: var(--c-primary);
+    background: var(--c-surface-2); padding: 4px 12px; border-radius: 99px;
   }
-
-  .card-title {
-    font-family: var(--f-brand);
-    font-size: 24px;
-    font-weight: 700;
-    color: var(--c-text);
-    text-align: center;
-    margin-top: 2px;
-  }
-
-  .card-sub {
-    font-size: 14px;
-    color: var(--c-text-mid);
-    text-align: center;
-    line-height: 1.55;
-    margin-bottom: 4px;
-  }
+  .card-title { font-family: var(--f-brand); font-size: 24px; font-weight: 700; color: var(--c-text); text-align: center; margin-top: 2px; }
+  .card-sub { font-size: 14px; color: var(--c-text-mid); text-align: center; line-height: 1.55; margin-bottom: 4px; }
 
   .btn-spinner {
     width: 18px; height: 18px;
-    border: 2px solid #dadce0;
-    border-top-color: #4285F4;
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
+    border: 2px solid #dadce0; border-top-color: #4285F4;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+    display: inline-block;
   }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
-  .privacy-note {
-    font-size: 11px;
-    color: var(--c-text-light);
-    text-align: center;
-    line-height: 1.5;
-    margin-top: 4px;
+  .privacy-note { font-size: 11px; color: var(--c-text-light); text-align: center; line-height: 1.5; margin-top: 4px; }
+
+  /* ── Botón testing toggle (muy discreto) ── */
+  .btn-testing-toggle {
+    background: none; border: none;
+    font-size: 11px; color: var(--c-text-light);
+    cursor: pointer; padding: 6px 8px; margin-top: 4px;
+    border-radius: 8px; transition: background 0.15s;
   }
+  .btn-testing-toggle:hover { background: var(--c-surface-2); }
+
+  /* ── Panel testing ── */
+  .testing-header {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .testing-badge {
+    font-size: 12px; font-weight: 700; color: #92400E;
+    background: #FEF3C7; padding: 4px 10px; border-radius: 99px;
+    border: 1px solid #F59E0B;
+  }
+  .btn-back {
+    background: none; border: none; font-size: 12px;
+    color: var(--c-text-light); cursor: pointer;
+    display: flex; align-items: center; gap: 3px;
+    padding: 4px 6px; border-radius: 6px;
+  }
+  .btn-back:hover { background: var(--c-surface-2); }
+
+  /* Cuentas rápidas */
+  .cuentas-rapidas {
+    width: 100%; padding: 12px; margin-top: 4px;
+    background: #FFFBEB; border: 1px dashed #F59E0B;
+    border-radius: 12px;
+  }
+  .cuentas-label { font-size: 11px; font-weight: 700; color: #92400E; margin-bottom: 8px; }
+  .cuentas-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+  .cuenta-chip {
+    padding: 7px; background: white; border: 1px solid #F59E0B;
+    border-radius: 8px; font-size: 12px; font-weight: 700;
+    color: #92400E; cursor: pointer; transition: background 0.15s;
+  }
+  .cuenta-chip:hover { background: #FEF3C7; }
+  .cuenta-chip:active { transform: scale(0.96); }
+  .cuentas-hint { font-size: 11px; color: #92400E; }
+  .cuentas-hint code { background: white; padding: 1px 5px; border-radius: 4px; font-family: monospace; }
 
   /* ── Offline ── */
   .offline-msg {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    padding: 14px;
-    background: #FFF8E1;
-    border-radius: 12px;
-    color: #795548;
-    font-size: 14px;
-    line-height: 1.5;
-    border: 1px solid #FFE082;
-    width: 100%;
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 14px; background: #FFF8E1; border-radius: 12px;
+    color: #795548; font-size: 14px; line-height: 1.5;
+    border: 1px solid #FFE082; width: 100%;
   }
   .offline-msg svg { flex-shrink: 0; margin-top: 1px; }
 
   /* ── Footer ── */
-  .login-footer {
-    font-size: 12px;
-    color: rgba(255,255,255,0.5);
-    text-align: center;
-  }
+  .login-footer { font-size: 12px; color: rgba(255,255,255,0.5); text-align: center; }
 </style>

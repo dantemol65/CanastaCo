@@ -308,6 +308,73 @@
     currentPage.set('lista-precios:' + comercioId)
   }
 
+  // ── Editar / eliminar precios propios (solo owner) ────────────────────
+
+  let precioEditando   = null   // { id, precio, esOferta, vencimiento }
+  let precioEditValor  = ''
+  let precioEditOferta = false
+  let precioEditVenc   = ''
+  let guardandoEdicion = false
+
+  function abrirEdicion(precio) {
+    precioEditando   = precio
+    precioEditValor  = String(precio.precio)
+    precioEditOferta = precio.esOferta || false
+    precioEditVenc   = precio.vencimiento || ''
+  }
+
+  function cerrarEdicion() {
+    precioEditando = null
+  }
+
+  async function guardarEdicion() {
+    if (!precioEditValor || isNaN(parseFloat(precioEditValor))) return
+    guardandoEdicion = true
+    try {
+      const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore')
+      const { db } = await import('../lib/firebase.js')
+      await updateDoc(doc(db, 'precios', precioEditando.id), {
+        precio:      parseFloat(precioEditValor),
+        esOferta:    precioEditOferta,
+        vencimiento: precioEditOferta && precioEditVenc ? precioEditVenc : null,
+        editadoEn:   serverTimestamp(),
+      })
+      preciosComercio.update(l =>
+        l.map(p => p.id === precioEditando.id
+          ? { ...p,
+              precio:      parseFloat(precioEditValor),
+              esOferta:    precioEditOferta,
+              vencimiento: precioEditOferta && precioEditVenc ? precioEditVenc : null,
+            }
+          : p
+        )
+      )
+      showToast('✓ Precio actualizado')
+      cerrarEdicion()
+    } catch (e) {
+      showToast('Error: ' + e.message, 'err')
+    } finally {
+      guardandoEdicion = false
+    }
+  }
+
+  async function eliminarPrecio(precioId) {
+    if (!confirm('¿Eliminar este precio?')) return
+    try {
+      const { doc, updateDoc, serverTimestamp } = await import('firebase/firestore')
+      const { db } = await import('../lib/firebase.js')
+      await updateDoc(doc(db, 'precios', precioId), {
+        activo:       false,
+        eliminadoEn:  serverTimestamp(),
+        eliminadoPor: user?.uid,
+      })
+      preciosComercio.update(l => l.filter(p => p.id !== precioId))
+      showToast('Precio eliminado')
+    } catch (e) {
+      showToast('Error: ' + e.message, 'err')
+    }
+  }
+
   function volver() { currentPage.set('detalle-comercio:' + comercioId) }
 
   // Auto-foco al input de búsqueda cuando abre el sheet
@@ -401,10 +468,17 @@
             </div>
 
             {#each items as precio (precio.id)}
-              {@const fresco = freshness(precio)}
-              <div class="precio-card" class:oferta={precio.esOferta}>
+              {@const fresco  = freshness(precio)}
+              {@const esMio   = esComercioOwner && precio.cargadoPor === user?.uid}
+              <div class="precio-card"
+                class:oferta={precio.esOferta}
+                class:precio-propio={esMio}
+              >
 
-                {#if precio.esOferta}
+                <!-- Badge oferta o "Mi precio" -->
+                {#if esMio}
+                  <div class="propio-badge">✎ Mi precio</div>
+                {:else if precio.esOferta}
                   <div class="oferta-badge">🔥 Oferta</div>
                 {/if}
 
@@ -429,38 +503,79 @@
                   {#if precio.totalVerificaciones > 0}
                     <span class="verif-chip">✓ {precio.totalVerificaciones}</span>
                   {/if}
+
+                  {#if !esMio && precio.cargadoPor}
+                    <span class="comunidad-chip">comunidad</span>
+                  {/if}
                 </div>
 
-                <div class="precio-acciones">
-                  <button class="accion-btn verif-btn"
-                    on:click={() => handleVerificar(precio.id)}
-                    title="Confirmar precio">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                      <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                    Confirmar
-                  </button>
+                <!-- Acciones: owner ve editar/eliminar en sus precios -->
+                {#if esMio}
+                  <div class="precio-acciones">
+                    <button class="accion-btn editar-btn"
+                      on:click={() => abrirEdicion(precio)}
+                      title="Editar precio">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                      Editar
+                    </button>
 
-                  <button class="accion-btn comparar-btn"
-                    on:click={() => irComparador(precio.productoId)}
-                    title="Comparar en otros comercios">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                    </svg>
-                    Comparar
-                  </button>
+                    <button class="accion-btn comparar-btn"
+                      on:click={() => irComparador(precio.productoId)}
+                      title="Comparar en otros comercios">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                      </svg>
+                      Comparar
+                    </button>
 
-                  <button class="accion-btn report-btn"
-                    on:click={() => handleReportar(precio.id)}
-                    title="Reportar precio incorrecto">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
-                      <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
-                      <line x1="12" y1="9" x2="12" y2="13"/>
-                      <line x1="12" y1="17" x2="12.01" y2="17"/>
-                    </svg>
-                    Incorrecto
-                  </button>
-                </div>
+                    <button class="accion-btn eliminar-btn"
+                      on:click={() => eliminarPrecio(precio.id)}
+                      title="Eliminar precio">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                        <path d="M10 11v6M14 11v6"/>
+                      </svg>
+                      Eliminar
+                    </button>
+                  </div>
+
+                {:else}
+                  <!-- Acciones comunidad: confirmar, comparar, reportar -->
+                  <div class="precio-acciones">
+                    <button class="accion-btn verif-btn"
+                      on:click={() => handleVerificar(precio.id)}
+                      title="Confirmar precio">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      Confirmar
+                    </button>
+
+                    <button class="accion-btn comparar-btn"
+                      on:click={() => irComparador(precio.productoId)}
+                      title="Comparar en otros comercios">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                      </svg>
+                      Comparar
+                    </button>
+
+                    <button class="accion-btn report-btn"
+                      on:click={() => handleReportar(precio.id)}
+                      title="Reportar precio incorrecto">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+                        <line x1="12" y1="9" x2="12" y2="13"/>
+                        <line x1="12" y1="17" x2="12.01" y2="17"/>
+                      </svg>
+                      Incorrecto
+                    </button>
+                  </div>
+                {/if}
 
               </div>
             {/each}
@@ -703,6 +818,71 @@
       </div>
 
     </div>
+{/if}
+
+{#if precioEditando}
+  <div class="sheet-overlay" use:portal on:click={cerrarEdicion} role="presentation"></div>
+  <div class="bottom-sheet sheet-edicion" use:portal role="dialog" aria-label="Editar precio">
+    <div class="sheet-top">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <div class="sheet-paso-info">
+          <span class="sheet-paso-num">Editando</span>
+          <h2 class="sheet-titulo">{precioEditando.productoNombre}</h2>
+        </div>
+        <button class="sheet-cerrar" on:click={cerrarEdicion} aria-label="Cerrar">✕</button>
+      </div>
+    </div>
+
+    <div class="sheet-scroll">
+      <div class="form-group">
+        <label class="form-label" for="edit-precio">Nuevo precio ($)</label>
+        <div class="precio-input-wrap">
+          <span class="peso-symbol">$</span>
+          <input
+            id="edit-precio"
+            type="number"
+            inputmode="decimal"
+            class="form-input precio-input"
+            placeholder="0"
+            bind:value={precioEditValor}
+            min="0" step="0.5"
+          />
+        </div>
+      </div>
+
+      <label class="oferta-toggle">
+        <input type="checkbox" bind:checked={precioEditOferta}/>
+        <span class="toggle-track"></span>
+        <span class="toggle-label">🔥 Es oferta / promoción</span>
+      </label>
+
+      {#if precioEditOferta}
+        <div class="form-group" style="margin-top:14px">
+          <label class="form-label" for="edit-venc">Válido hasta (opcional)</label>
+          <input
+            id="edit-venc"
+            type="date"
+            class="form-input"
+            bind:value={precioEditVenc}
+            min={new Date().toISOString().split('T')[0]}
+          />
+        </div>
+      {/if}
+
+      <div style="height:8px"></div>
+    </div>
+
+    <div class="sheet-footer">
+      <button
+        class="btn btn-primary btn-full"
+        on:click={guardarEdicion}
+        disabled={!precioEditValor || guardandoEdicion}
+      >
+        {guardandoEdicion ? 'Guardando…' : '✓ Guardar cambio'}
+      </button>
+    </div>
+  </div>
 {/if}
 
 {#if mostrarEscaner}
@@ -1052,5 +1232,28 @@
     white-space: nowrap;
   }
   .toast.toast-err { background: var(--c-error); }
+
+  /* Precio propio del dueño */
+  .precio-card.precio-propio {
+    border-color: rgba(27,107,58,0.4);
+    background: rgba(27,107,58,0.03);
+  }
+  .propio-badge {
+    position: absolute; top: 0; right: 0;
+    background: var(--c-primary); color: white;
+    font-size: 10px; font-weight: 700; padding: 3px 10px;
+    border-radius: 0 var(--r-lg) 0 var(--r-md);
+  }
+  .comunidad-chip {
+    font-size: 10px; color: var(--c-text-light);
+    background: var(--c-surface-2); padding: 2px 7px;
+    border-radius: var(--r-full); font-weight: 600;
+  }
+
+  /* Botones editar / eliminar */
+  .editar-btn   { border-color: var(--c-primary); color: var(--c-primary); }
+  .eliminar-btn { border-color: #DC2626; color: #DC2626; }
+  .editar-btn:hover   { background: rgba(27,107,58,0.08); }
+  .eliminar-btn:hover { background: #FEE2E2; }
 
 </style>

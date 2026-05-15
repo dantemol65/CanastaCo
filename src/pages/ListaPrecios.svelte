@@ -18,6 +18,7 @@
 
   let comercio     = null
   let cargando     = true
+  let accesoDenegado = false
   let toastMsg     = ''
   let toastTipo    = 'ok'
 
@@ -42,8 +43,9 @@
   let guardandoItem  = false
   let publicando     = false
 
-  $: perfil     = $userProfile
-  $: localidad  = perfil?.localidad || ''
+  $: user      = $currentUser
+  $: perfil    = $userProfile
+  $: localidad = perfil?.localidad || ''
 
   $: if (busquedaProd.length >= 2) {
     const q = busquedaProd.toLowerCase()
@@ -61,6 +63,14 @@
   onMount(async () => {
     const c = await cargarComercio(comercioId)
     comercio = c
+
+    // Verificar que el usuario es el dueño del comercio
+    if (!c || c.reclamadoPor !== user?.uid) {
+      accesoDenegado = true
+      cargando = false
+      return
+    }
+
     await cargarProductos(localidad)
     // Crear la lista (tipo comercio) en Firestore al entrar
     if (c && localidad) {
@@ -201,6 +211,14 @@
   {#if cargando}
     <div class="cargando-wrap">
       <div class="spinner" style="border-top-color: var(--c-primary); width:28px; height:28px;"></div>
+    </div>
+
+  {:else if accesoDenegado}
+    <div class="acceso-denegado">
+      <span class="denegado-icon">🔒</span>
+      <p class="denegado-titulo">Acceso restringido</p>
+      <p class="denegado-sub">Solo el dueño verificado de este comercio puede cargar listas de precios.</p>
+      <button class="btn btn-primary" on:click={volver}>Volver</button>
     </div>
 
   {:else if paso === 'confirmacion'}
@@ -437,6 +455,16 @@
   .btn-eliminar:hover { color: var(--c-error); }
   .items-section > .btn { border-radius: 0 !important; }
   .publish-hint { text-align: center; font-size: 12px; color: var(--c-text-light); padding: 8px 16px 16px; }
+
+  /* Acceso denegado */
+  .acceso-denegado {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 40px 24px; text-align: center; gap: 12px;
+  }
+  .denegado-icon  { font-size: 52px; }
+  .denegado-titulo { font-family: var(--f-brand); font-size: 22px; color: var(--c-text); }
+  .denegado-sub   { font-size: 14px; color: var(--c-text-light); line-height: 1.6; max-width: 280px; }
 
   /* Confirmación */
   .confirmacion-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px 24px; text-align: center; gap: 16px; }
