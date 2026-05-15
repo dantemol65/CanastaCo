@@ -43,35 +43,88 @@ export const UNIDADES = [
 ]
 
 // ── Días hasta considerar un precio "desactualizado" ──────────────────────
-const DIAS_FRESCO   = 7
-const DIAS_VALIDO   = 30
-const MAX_REPORTES  = 3
+const DIAS_FRESCO  = 7
+const DIAS_VALIDO  = 30
+const MAX_REPORTES = 3
 
-// ── Cache helpers ─────────────────────────────────────────────────────────
+// ── Estrategia de caché por capas ─────────────────────────────────────────
+//
+// Capa 1 — Comercios de la localidad     → en stores/comercios.js (7 días) ✓
+// Capa 2 — Precios de últimos comercios  → 2 horas, máx 3 comercios
+// Capa 3 — Catálogo de productos         → NO se cachea (solo online)
+// Comparador                             → solo online
+//
+// Historial de comercios visitados: guardamos los últimos 3 IDs
+// y limpiamos el caché de los que ya no están en esa lista.
 
-const CACHE_TTL = 6 * 60 * 60 * 1000  // 6 horas
+const CACHE_TTL_PRECIOS   = 2 * 60 * 60 * 1000   // 2 horas
+const MAX_COMERCIOS_CACHE = 3
 
-function _cacheGet(key) {
+// ── Historial de comercios visitados ─────────────────────────────────────
+
+function _getHistorial() {
+  try { return JSON.parse(localStorage.getItem('canastaco_historial_c') || '[]') } catch { return [] }
+}
+
+function _pushHistorial(comercioId) {
   try {
-    const raw = localStorage.getItem('canastaco_' + key)
+    const hist = _getHistorial().filter(id => id !== comercioId)
+    hist.unshift(comercioId)
+    const nuevaLista = hist.slice(0, MAX_COMERCIOS_CACHE)
+    localStorage.setItem('canastaco_historial_c', JSON.stringify(nuevaLista))
+
+    // Limpiar caché de comercios que ya no están en el historial
+    hist.slice(MAX_COMERCIOS_CACHE).forEach(id => {
+      localStorage.removeItem('canastaco_precios_c_' + id)
+    })
+  } catch {}
+}
+
+// ── Cache helpers de precios ──────────────────────────────────────────────
+
+function _preciosCacheGet(comercioId) {
+  try {
+    const raw = localStorage.getItem('canastaco_precios_c_' + comercioId)
     if (!raw) return null
     const { ts, data } = JSON.parse(raw)
-    if (Date.now() - ts > CACHE_TTL) { localStorage.removeItem('canastaco_' + key); return null }
-    return data
+    if (Date.now() - ts > CACHE_TTL_PRECIOS) {
+      localStorage.removeItem('canastaco_precios_c_' + comercioId)
+      return null
+    }
+    return { data, ts }
   } catch { return null }
 }
 
-function _cacheSet(key, data) {
-  try { localStorage.setItem('canastaco_' + key, JSON.stringify({ ts: Date.now(), data })) } catch {}
+function _preciosCacheSet(comercioId, data) {
+  try {
+    localStorage.setItem(
+      'canastaco_precios_c_' + comercioId,
+      JSON.stringify({ ts: Date.now(), data })
+    )
+    _pushHistorial(comercioId)
+  } catch {}
 }
 
-// ── Productos (catálogo por localidad) ────────────────────────────────────
+export function preciosCacheInfo(comercioId) {
+  // Devuelve info del caché para mostrar al usuario (antigüedad)
+  try {
+    const raw = localStorage.getItem('canastaco_precios_c_' + comercioId)
+    if (!raw) return null
+    const { ts } = JSON.parse(raw)
+    const mins = Math.floor((Date.now() - ts) / 60000)
+    if (mins < 60)   return `Datos de hace ${mins} min`
+    const hs = Math.floor(mins / 60)
+    return `Datos de hace ${hs}h`
+  } catch { return null }
+}
+
+// ── Productos (catálogo por localidad) — SOLO ONLINE, sin caché ──────────
 
 export async function cargarProductos(localidadId) {
-  const key = 'prods_' + localidadId
-  const cached = _cacheGet(key)
-  if (cached) productos.set(cached)
-  if (!navigator.onLine) return cached || []
+  // Sin caché, solo online
+  if (!navigator.onLine) return get(productos)
+  // Nunca lanzar si no hay localidad — evita romper Promise.all en Precios.svelte
+  if (!localidadId) return get(productos)
 
   try {
     const q = query(
@@ -83,11 +136,10 @@ export async function cargarProductos(localidadId) {
       .map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'))
     productos.set(lista)
-    _cacheSet(key, lista)
     return lista
   } catch (err) {
     console.error('cargarProductos:', err)
-    return cached || []
+    return get(productos)
   }
 }
 
@@ -142,10 +194,15 @@ export async function cargarPreciosComercio(comercioId) {
   cargandoPrecios.set(true)
   errorPrecios.set(null)
 
-  const key = 'precios_c_' + comercioId
-  const cached = _cacheGet(key)
-  if (cached) preciosComercio.set(cached)
-  if (!navigator.onLine) { cargandoPrecios.set(false); return cached || [] }
+  // Usar caché de precios (2h, últimos 3 comercios)
+  const entry = _preciosCacheGet(comercioId)
+  if (entry) preciosComercio.set(entry.data)
+
+  if (!navigator.onLine) {
+    cargandoPrecios.set(false)
+    if (!entry) errorPrecios.set('Sin conexión — no hay precios guardados para este comercio.')
+    return entry?.data || []
+  }
 
   try {
     const q = query(
@@ -159,18 +216,20 @@ export async function cargarPreciosComercio(comercioId) {
       .filter(p => !esPrecioVencido(p))
       .sort((a, b) => (a.productoNombre || '').localeCompare(b.productoNombre || '', 'es'))
     preciosComercio.set(lista)
-    _cacheSet(key, lista)
+    _preciosCacheSet(comercioId, lista)
     return lista
   } catch (err) {
     console.error('cargarPreciosComercio:', err)
     errorPrecios.set('Error al cargar precios')
-    return cached || []
+    return entry?.data || []
   } finally {
     cargandoPrecios.set(false)
   }
 }
 
 export async function cargarPreciosProducto(productoId, localidadId) {
+  // Comparador: solo online — datos offline de precios entre comercios
+  // pueden estar desactualizados y confundir al usuario
   if (!navigator.onLine) return []
   try {
     const q = query(

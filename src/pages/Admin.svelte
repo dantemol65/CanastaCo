@@ -7,125 +7,203 @@
     TIPOS_NOTIF
   } from '../stores/notificaciones.js'
   import {
-    collection, getDocs, query, where, orderBy,
+    collection, getDocs, query, where, limit,
     doc, updateDoc, serverTimestamp
   } from 'firebase/firestore'
   import { db } from '../lib/firebase.js'
+  import { getNombreProvincia, resolverNombresLocalidad, formatLocalidadProvincia } from '../lib/georef.js'
   import { generarCredencial } from '../stores/comercios.js'
   import { generarPDFCredencial } from '../lib/credencial.js'
 
-  // Verificar que sea admin
-  $: if ($userProfile && $userProfile.rol !== 'admin') {
-    currentPage.set('home')
-  }
+  $: if ($userProfile && $userProfile.rol !== 'admin') currentPage.set('home')
 
-  let seccion = 'notificaciones'  // notificaciones | comercios | usuarios | credencial
-  let cargando = false
-  let offline = false
+  // ── Estado global ─────────────────────────────────────────────────────
+  let seccion          = 'notificaciones'
+  let cargando         = false
+  let offline          = false
 
+  // ── Selector global de localidad ──────────────────────────────────────
+  let localidadGlobal  = ''          // '' = todas las localidades
+  let localidadesAdmin = []          // se puebla al cargar comercios o usuarios
+  let nombresLocalidad = new Map()   // id → nombre legible (se resuelve via georef)
+
+  // ── Datos por sección ─────────────────────────────────────────────────
+  let comercios        = []
+  let filtroEstado     = 'pendiente'
+  let filtroRol        = ''
+
+  let usuarios         = []
+  let busquedaUsuario  = ''
+
+  let precios          = []
+
+  let comercioCredencial = null
+  let generandoPDF       = false
+  let codigoGenerado     = null
+  let busquedaComercio   = ''
+
+  // ── Reactivos derivados ───────────────────────────────────────────────
+  $: comerciosFiltrados = comercios
+    .filter(c => filtroEstado === 'todos' || c.estado === filtroEstado)
+    .sort((a, b) => (b.creadoEn?.toDate?.() || 0) - (a.creadoEn?.toDate?.() || 0))
+
+  $: usuariosFiltrados = usuarios
+    .filter(u => !filtroRol || (u.rol || 'usuario') === filtroRol)
+    .filter(u => !busquedaUsuario ||
+      u.alias?.toLowerCase().includes(busquedaUsuario.toLowerCase()) ||
+      u.email?.toLowerCase().includes(busquedaUsuario.toLowerCase())
+    )
+    .sort((a, b) => (a.alias || '').localeCompare(b.alias || '', 'es'))
+
+  // ── Conexión ──────────────────────────────────────────────────────────
   async function checkConexion() {
     try {
       const ctrl = new AbortController()
       setTimeout(() => ctrl.abort(), 3000)
-      await fetch('https://www.google.com/generate_204', {
-        mode: 'no-cors', signal: ctrl.signal, cache: 'no-store'
-      })
+      await fetch('https://www.google.com/generate_204', { mode:'no-cors', signal:ctrl.signal, cache:'no-store' })
       offline = false
-    } catch {
-      offline = true
-    }
+    } catch { offline = true }
   }
 
-  // Datos
-  let comerciosPendientes = []
-  let usuariosLista       = []
-  let comercioCredencial  = null
-  let generandoPDF        = false
-  let codigoGenerado      = null
-  let busquedaComercio    = ''
-
+  // ── Mount ─────────────────────────────────────────────────────────────
   onMount(async () => {
     checkConexion()
     window.addEventListener('online',  checkConexion)
     window.addEventListener('offline', () => offline = true)
     await cargarNotificaciones()
+    // Cargar localidades disponibles en background
+    cargarLocalidades()
   })
 
+  // ── Localidades ───────────────────────────────────────────────────────
+  async function cargarLocalidades() {
+    try {
+      const snap = await getDocs(collection(db, 'comercios'))
+      const set  = new Set()
+      snap.docs.forEach(d => { const loc = d.data().localidad; if (loc) set.add(loc) })
+      const ids = Array.from(set).sort()
+      localidadesAdmin = ids
+
+      // Resolver nombres inmediatamente para que el selector muestre texto legible
+      if (ids.length) {
+        const map = await resolverNombresLocalidad(ids)
+        nombresLocalidad = new Map([...nombresLocalidad, ...map])
+      }
+    } catch {}
+  }
+
+  // Cuando cambia la localidad global → recargar la sección activa
+  async function onLocalidadChange() {
+    if (seccion === 'comercios') await cargarComerciosAdmin()
+    if (seccion === 'usuarios')  await cargarUsuarios()
+    if (seccion === 'precios')   await cargarPreciosAdmin()
+  }
+
+  // ── Navegación interna ────────────────────────────────────────────────
   async function irSeccion(s) {
-    seccion = s
+    seccion  = s
     cargando = true
     try {
-      if (s === 'comercios') await cargarComerciosPendientes()
+      if (s === 'comercios') await cargarComerciosAdmin()
       if (s === 'usuarios')  await cargarUsuarios()
-    } finally {
-      cargando = false
-    }
+      if (s === 'precios')   await cargarPreciosAdmin()
+    } finally { cargando = false }
   }
 
-  async function cargarComerciosPendientes() {
-    if (!navigator.onLine) { comerciosPendientes = []; return }
+  // ── Comercios ─────────────────────────────────────────────────────────
+  async function cargarComerciosAdmin() {
+    if (!navigator.onLine) { comercios = []; return }
     try {
-      const q = query(
-        collection(db, 'comercios'),
-        where('estado', '==', 'pendiente')
-      )
-      const snap = await getDocs(q)
-      comerciosPendientes = snap.docs
-        .map(d => ({ id: d.id, ...d.data() }))
-        .sort((a, b) => (b.creadoEn?.toDate?.() || 0) - (a.creadoEn?.toDate?.() || 0))
-    } catch (e) {
-      console.error('cargarComerciosPendientes:', e)
-      comerciosPendientes = []
-    }
-  }
+      const snap = await getDocs(query(collection(db, 'comercios')))
+      let lista  = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (localidadGlobal) lista = lista.filter(c => c.localidad === localidadGlobal)
+      comercios = lista
 
-  async function cargarUsuarios() {
-    if (!navigator.onLine) { usuariosLista = []; return }
-    try {
-      const snap = await getDocs(collection(db, 'usuarios'))
-      usuariosLista = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    } catch (e) {
-      console.error('cargarUsuarios:', e)
-      usuariosLista = []
-    }
+      // Resolver nombres legibles de localidades
+      const ids = [...new Set(lista.map(c => c.localidad).filter(Boolean))]
+      if (ids.length) {
+        const map = await resolverNombresLocalidad(ids)
+        nombresLocalidad = new Map([...nombresLocalidad, ...map])
+        // Poblar selector con nombres legibles
+        localidadesAdmin = [...new Set(snap.docs.map(d => d.data().localidad).filter(Boolean))].sort()
+      }
+    } catch (e) { console.error(e); comercios = [] }
   }
 
   async function aprobarComercio(id, nombre) {
-    await updateDoc(doc(db, 'comercios', id), {
-      estado:     'verificado',
-      reputacion: 50,
-      verificadoEn: serverTimestamp(),
-    })
-    comerciosPendientes = comerciosPendientes.filter(c => c.id !== id)
+    await updateDoc(doc(db, 'comercios', id), { estado:'verificado', reputacion:50, verificadoEn:serverTimestamp() })
+    comercios = comercios.map(c => c.id === id ? { ...c, estado:'verificado' } : c)
     mostrarToast(`"${nombre}" verificado`)
   }
 
   async function rechazarComercio(id, nombre) {
-    if (!confirm(`¿Rechazar "${nombre}"? Esta acción no se puede deshacer.`)) return
-    await updateDoc(doc(db, 'comercios', id), { estado: 'rechazado' })
-    comerciosPendientes = comerciosPendientes.filter(c => c.id !== id)
+    if (!confirm(`¿Rechazar "${nombre}"?`)) return
+    await updateDoc(doc(db, 'comercios', id), { estado:'rechazado' })
+    comercios = comercios.map(c => c.id === id ? { ...c, estado:'rechazado' } : c)
     mostrarToast(`"${nombre}" rechazado`)
   }
 
-  async function cambiarRol(uid, rolActual) {
-    const roles = ['usuario', 'dedicado', 'admin']
-    const nuevoRol = prompt(`Rol actual: ${rolActual}\nNuevo rol (usuario/dedicado/admin):`)
-    if (!nuevoRol || !roles.includes(nuevoRol)) return
-    await updateDoc(doc(db, 'usuarios', uid), { rol: nuevoRol })
-    usuariosLista = usuariosLista.map(u => u.id === uid ? { ...u, rol: nuevoRol } : u)
-    mostrarToast('Rol actualizado')
-  }
-
   async function desbloquearComercio(id, nombre) {
-    await updateDoc(doc(db, 'comercios', id), {
-      reclamoBloqueado: false,
-      intentosFallidos: 0,
-    })
+    await updateDoc(doc(db, 'comercios', id), { reclamoBloqueado:false, intentosFallidos:0 })
+    comercios = comercios.map(c => c.id === id ? { ...c, reclamoBloqueado:false } : c)
     mostrarToast(`"${nombre}" desbloqueado`)
   }
 
-  // ── Credencial ────────────────────────────────────────────────────────
+  // ── Usuarios ──────────────────────────────────────────────────────────
+  async function cargarUsuarios() {
+    if (!navigator.onLine) { usuarios = []; return }
+    try {
+      const snap = await getDocs(collection(db, 'usuarios'))
+      let lista  = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+      if (localidadGlobal) lista = lista.filter(u => u.localidad === localidadGlobal)
+      usuarios = lista
 
+      // Resolver nombres de localidades de usuarios
+      const uids = [...new Set(lista.map(u => u.localidad).filter(Boolean))]
+      if (uids.length) {
+        const map = await resolverNombresLocalidad(uids)
+        nombresLocalidad = new Map([...nombresLocalidad, ...map])
+      }
+    } catch (e) { console.error(e); usuarios = [] }
+  }
+
+  async function cambiarRol(uid, rolActual) {
+    const roles = ['usuario', 'dedicado', 'comercio', 'admin']
+    const nuevoRol = prompt(`Rol actual: ${rolActual}\nNuevo rol:\n${roles.join(' / ')}`)
+    if (!nuevoRol || !roles.includes(nuevoRol)) return
+    await updateDoc(doc(db, 'usuarios', uid), { rol: nuevoRol })
+    usuarios = usuarios.map(u => u.id === uid ? { ...u, rol: nuevoRol } : u)
+    mostrarToast('Rol actualizado')
+  }
+
+  // ── Precios ───────────────────────────────────────────────────────────
+  async function cargarPreciosAdmin() {
+    cargando = true
+    try {
+      const q    = query(collection(db, 'precios'), where('activo', '==', true), limit(100))
+      const snap = await getDocs(q)
+      let lista  = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const ta = a.creadoEn?.toDate?.() || new Date(0)
+          const tb = b.creadoEn?.toDate?.() || new Date(0)
+          return tb - ta
+        })
+      if (localidadGlobal) lista = lista.filter(p => p.localidad === localidadGlobal)
+      precios = lista
+    } catch (e) { console.error(e) } finally { cargando = false }
+  }
+
+  async function desactivarPrecio(precioId) {
+    if (!confirm('¿Desactivar este precio?')) return
+    await updateDoc(doc(db, 'precios', precioId), {
+      activo:false, desactivadoPorAdmin:true, desactivadoEn:serverTimestamp()
+    })
+    precios = precios.filter(p => p.id !== precioId)
+    mostrarToast('Precio desactivado')
+  }
+
+  // ── Credencial ────────────────────────────────────────────────────────
   async function buscarComercioParaCredencial() {
     if (!busquedaComercio.trim()) return
     cargando = true
@@ -137,9 +215,7 @@
         c.nombre?.toLowerCase().includes(q) || c.id === busquedaComercio
       ) || null
       codigoGenerado = null
-    } finally {
-      cargando = false
-    }
+    } finally { cargando = false }
   }
 
   async function handleGenerarCredencial() {
@@ -148,29 +224,17 @@
     try {
       const { codigoPublico, codigoPrivado } = await generarCredencial(comercioCredencial.id)
       codigoGenerado = { codigoPublico, codigoPrivado }
-
-      // Generar y descargar PDF
-      const pdf = await generarPDFCredencial({
-        comercio:     comercioCredencial,
-        codigoPublico,
-        codigoPrivado,
-      })
+      const pdf = await generarPDFCredencial({ comercio:comercioCredencial, codigoPublico, codigoPrivado })
       pdf.save(`credencial-${comercioCredencial.nombre.replace(/\s+/g, '-')}.pdf`)
       mostrarToast('Credencial generada y descargada')
     } catch (e) {
-      mostrarToast('Error al generar credencial: ' + e.message)
-    } finally {
-      generandoPDF = false
-    }
+      mostrarToast('Error: ' + e.message)
+    } finally { generandoPDF = false }
   }
 
-  // ── Toast ─────────────────────────────────────────────────────────────
-
+  // ── Toast / utils ─────────────────────────────────────────────────────
   let toastMsg = ''
-  function mostrarToast(msg) {
-    toastMsg = msg
-    setTimeout(() => toastMsg = '', 3000)
-  }
+  function mostrarToast(msg) { toastMsg = msg; setTimeout(() => toastMsg = '', 3000) }
 
   function formatFecha(ts) {
     if (!ts) return ''
@@ -185,7 +249,7 @@
     <div class="toast" role="status">{toastMsg}</div>
   {/if}
 
-  <!-- Header -->
+  <!-- Header con selector global de localidad -->
   <header class="admin-header">
     <button class="btn-volver" on:click={() => currentPage.set('home')} aria-label="Volver">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
@@ -201,12 +265,33 @@
     {/if}
   </header>
 
+  <!-- Selector global de localidad -->
+  <div class="loc-global-bar">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+    </svg>
+    <select
+      class="loc-global-select"
+      bind:value={localidadGlobal}
+      on:change={onLocalidadChange}
+    >
+      <option value="">🌍 Todas las localidades</option>
+      {#each localidadesAdmin as loc}
+        <option value={loc}>{nombresLocalidad.get(`${loc}__label`) || nombresLocalidad.get(loc) || loc}</option>
+      {/each}
+    </select>
+    {#if localidadGlobal}
+      <button class="loc-clear" on:click={() => { localidadGlobal = ''; onLocalidadChange() }} title="Ver todas">✕</button>
+    {/if}
+  </div>
+
   <!-- Nav interna -->
   <nav class="admin-nav">
     {#each [
       { id:'notificaciones', label:'Notif.', icon:'🔔', badge: $totalNoLeidas },
       { id:'comercios',      label:'Comercios', icon:'🏪' },
       { id:'usuarios',       label:'Usuarios', icon:'👥' },
+      { id:'precios',        label:'Precios', icon:'🏷️' },
       { id:'credencial',     label:'Credencial', icon:'📄' },
     ] as item}
       <button
@@ -273,32 +358,47 @@
         </div>
       {/if}
 
-    <!-- ── Comercios pendientes ───────────────────────────────────────── -->
+    <!-- ── Comercios ────────────────────────────────────────────────── -->
     {:else if seccion === 'comercios'}
-      <h2 class="section-title">Comercios pendientes</h2>
+      <!-- Filtro por estado (localidad ya la maneja el selector global) -->
+      <div class="admin-filters">
+        {#each [
+          { v:'pendiente',  l:'Pendientes' },
+          { v:'verificado', l:'Verificados' },
+          { v:'rechazado',  l:'Rechazados' },
+          { v:'todos',      l:'Todos' },
+        ] as f}
+          <button
+            class="filter-chip"
+            class:active={filtroEstado === f.v}
+            on:click={() => filtroEstado = f.v}
+          >{f.l}</button>
+        {/each}
+      </div>
 
       {#if cargando}
         <div class="loading-msg">Cargando…</div>
       {:else if offline}
-        <div class="empty-state">
-          <div class="empty-icon">📵</div>
-          <p>Sin conexión — no disponible offline</p>
-        </div>
-      {:else if comerciosPendientes.length === 0}
-        <div class="empty-state">
-          <div class="empty-icon">✅</div>
-          <p>Sin comercios pendientes</p>
-        </div>
+        <div class="empty-state"><div class="empty-icon">📵</div><p>Sin conexión</p></div>
+      {:else if comerciosFiltrados.length === 0}
+        <div class="empty-state"><div class="empty-icon">✅</div><p>Sin resultados</p></div>
       {:else}
+        <p class="section-desc">
+          {comerciosFiltrados.length} comercio{comerciosFiltrados.length !== 1 ? 's' : ''}
+          {localidadGlobal ? `· ${nombresLocalidad.get(localidadGlobal) || localidadGlobal}` : '· todas las localidades'}
+        </p>
         <div class="items-lista">
-          {#each comerciosPendientes as c (c.id)}
+          {#each comerciosFiltrados as c (c.id)}
             <div class="item-card">
               <div class="item-info">
                 <p class="item-nombre">{c.nombre}</p>
                 <p class="item-sub">{c.tipo} · {c.direccion || 'Sin dirección'}</p>
-                {#if c.creadoEn}
-                  <p class="item-fecha">{formatFecha(c.creadoEn)}</p>
+                {#if !localidadGlobal}
+                  <p class="item-sub loc-sub">
+                    📍 {formatLocalidadProvincia(c.localidad, c.provincia, nombresLocalidad)}
+                  </p>
                 {/if}
+                {#if c.creadoEn}<p class="item-fecha">{formatFecha(c.creadoEn)}</p>{/if}
                 {#if c.reclamoBloqueado}
                   <button class="btn-desbloquear" on:click={() => desbloquearComercio(c.id, c.nombre)}>
                     🔓 Desbloquear reclamo
@@ -306,32 +406,65 @@
                 {/if}
               </div>
               <div class="item-acciones">
-                <button class="btn-aprobar" on:click={() => aprobarComercio(c.id, c.nombre)}>✓</button>
-                <button class="btn-rechazar" on:click={() => rechazarComercio(c.id, c.nombre)}>✕</button>
+                {#if c.estado === 'pendiente'}
+                  <button class="btn-aprobar" on:click={() => aprobarComercio(c.id, c.nombre)}>✓</button>
+                  <button class="btn-rechazar" on:click={() => rechazarComercio(c.id, c.nombre)}>✕</button>
+                {:else}
+                  <span class="estado-chip estado-{c.estado}">{c.estado}</span>
+                {/if}
               </div>
             </div>
           {/each}
         </div>
       {/if}
 
-    <!-- ── Usuarios ───────────────────────────────────────────────────── -->
+    <!-- ── Usuarios ─────────────────────────────────────────────────── -->
     {:else if seccion === 'usuarios'}
-      <h2 class="section-title">Usuarios ({usuariosLista.length})</h2>
+      <div class="admin-search-row">
+        <input
+          type="search"
+          class="form-input admin-search"
+          placeholder="Buscar por alias o email…"
+          bind:value={busquedaUsuario}
+        />
+      </div>
+
+      <div class="admin-filters">
+        {#each [
+          { v:'',          l:'Todos' },
+          { v:'usuario',   l:'Usuarios' },
+          { v:'dedicado',  l:'Dedicados' },
+          { v:'comercio',  l:'Comercios' },
+          { v:'admin',     l:'Admins' },
+        ] as f}
+          <button
+            class="filter-chip"
+            class:active={filtroRol === f.v}
+            on:click={() => filtroRol = f.v}
+          >{f.l}</button>
+        {/each}
+      </div>
 
       {#if cargando}
         <div class="loading-msg">Cargando…</div>
       {:else if offline}
-        <div class="empty-state">
-          <div class="empty-icon">📵</div>
-          <p>Sin conexión — no disponible offline</p>
-        </div>
+        <div class="empty-state"><div class="empty-icon">📵</div><p>Sin conexión</p></div>
       {:else}
+        <p class="section-desc">
+          {usuariosFiltrados.length} usuario{usuariosFiltrados.length !== 1 ? 's' : ''}
+          {localidadGlobal ? `· ${nombresLocalidad.get(localidadGlobal) || localidadGlobal}` : '· todas las localidades'}
+        </p>
         <div class="items-lista">
-          {#each usuariosLista as u (u.id)}
+          {#each usuariosFiltrados as u (u.id)}
             <div class="item-card">
               <div class="item-info">
                 <p class="item-nombre">{u.alias || u.email}</p>
                 <p class="item-sub">{u.email}</p>
+                {#if !localidadGlobal && u.localidad}
+                  <p class="item-sub loc-sub">
+                    📍 {formatLocalidadProvincia(u.localidad, u.provincia, nombresLocalidad)}
+                  </p>
+                {/if}
                 <span class="rol-chip rol-{u.rol || 'usuario'}">{u.rol || 'usuario'}</span>
               </div>
               <button class="btn-rol" on:click={() => cambiarRol(u.id, u.rol || 'usuario')}>
@@ -343,6 +476,44 @@
       {/if}
 
     <!-- ── Credencial ─────────────────────────────────────────────────── -->
+
+    <!-- ── Precios (multi-localidad) ────────────────────────────────── -->
+    {:else if seccion === 'precios'}
+      {#if cargando}
+        <div class="loading-msg">Cargando…</div>
+      {:else if precios.length === 0}
+        <div class="empty-state">
+          <div class="empty-icon">🏷️</div>
+          <p>Sin precios registrados</p>
+        </div>
+      {:else}
+        <p class="section-desc">{precios.length} precio{precios.length !== 1 ? 's' : ''} (últimos 100)</p>
+        <div class="items-lista">
+          {#each precios as p (p.id)}
+            <div class="item-card">
+              <div class="item-info">
+                <p class="item-nombre">{p.productoNombre}</p>
+                <p class="item-sub">{p.comercioNombre}</p>
+                <p class="item-sub loc-sub">
+                    📍 {formatLocalidadProvincia(p.localidad, p.provincia, nombresLocalidad)}
+                  </p>
+                <p class="item-fecha">{formatFecha(p.creadoEn)}</p>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+                <span style="font-weight:700;color:var(--c-primary);font-size:1rem">
+                  ${p.precio?.toLocaleString('es-AR')}
+                </span>
+                <button class="btn-rechazar" style="font-size:0.7rem;width:auto;padding:4px 8px"
+                  on:click={() => desactivarPrecio(p.id)}
+                  title="Desactivar precio">
+                  Desactivar
+                </button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
     {:else if seccion === 'credencial'}
       <h2 class="section-title">Generar credencial</h2>
       <p class="section-desc">
@@ -665,6 +836,63 @@
     color: var(--c-primary);
   }
   .codigo-aviso { font-size: 0.72rem; color: #92400E; margin: 0; }
+
+  /* Selector global de localidad */
+  .loc-global-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    background: rgba(27,107,58,0.06);
+    border-bottom: 1px solid var(--c-border);
+  }
+  .loc-global-bar svg { color: var(--c-primary); flex-shrink: 0; }
+  .loc-global-select {
+    flex: 1; border: none; background: transparent;
+    font-size: 0.85rem; font-weight: 600; color: var(--c-primary);
+    font-family: var(--f-ui); cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+  }
+  .loc-global-select:focus { outline: none; }
+  .loc-clear {
+    background: none; border: none; color: var(--c-text-light);
+    font-size: 0.75rem; cursor: pointer; padding: 2px 4px;
+    border-radius: 4px; flex-shrink: 0;
+  }
+  .loc-clear:hover { background: var(--c-border); }
+
+  /* Filtros admin — chips de estado/rol */
+  .admin-filters {
+    display: flex; gap: 6px; margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .filter-chip {
+    padding: 5px 12px; border-radius: 99px;
+    border: 1.5px solid var(--c-border);
+    background: var(--c-surface);
+    font-size: 0.75rem; font-weight: 700;
+    color: var(--c-text-mid); cursor: pointer;
+    transition: all 0.15s; font-family: var(--f-ui);
+    white-space: nowrap;
+  }
+  .filter-chip.active {
+    background: var(--c-primary); border-color: var(--c-primary); color: white;
+  }
+  .filter-chip:active { transform: scale(0.95); }
+
+  /* Búsqueda usuarios */
+  .admin-search-row { margin-bottom: 10px; }
+  .admin-search { font-size: 0.85rem; padding: 10px 14px; }
+
+  .loc-sub {
+    color: var(--c-text-light) !important;
+    font-size: 0.7rem !important;
+  }
+  .estado-chip {
+    font-size: 0.7rem; font-weight: 700; padding: 3px 8px;
+    border-radius: 99px; white-space: nowrap;
+  }
+  .estado-verificado { background: #D1FAE5; color: #065F46; }
+  .estado-rechazado  { background: #FEE2E2; color: #991B1B; }
+  .estado-pendiente  { background: #FEF3C7; color: #92400E; }
 
   /* Empty state */
   .empty-state {

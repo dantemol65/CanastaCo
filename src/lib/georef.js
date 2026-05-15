@@ -102,5 +102,87 @@ export async function getLocalidades(departamentoId) {
 // ── Nombres por ID (para mostrar en UI) ───────────────────────────────────
 
 export function getNombreProvincia(id) {
-  return provincias.find(p => p.id === id)?.nombre || id
+  if (!id) return ''
+  // Normalizar: comparar como string con y sin cero adelante
+  const idStr = String(id)
+  const idPad = idStr.padStart(2, '0')
+  return provincias.find(p => p.id === idStr || p.id === idPad)?.nombre || idStr
+}
+
+/**
+ * Resuelve un array de IDs de localidad → Map<id, nombre>
+ * Usa la API georef con búsqueda por ID y caché localStorage.
+ * Ideal para el panel admin donde hay múltiples localidades distintas.
+ */
+export async function resolverNombresLocalidad(ids = []) {
+  const unicos = [...new Set(ids.filter(Boolean))]
+  const result = new Map()
+  if (!unicos.length) return result
+
+  const pendientes = []
+
+  // Revisar caché individual para cada id
+  for (const id of unicos) {
+    const cachedNombre = cacheGet(`loc_nombre_${id}`)
+    const cachedLabel  = cacheGet(`loc_label_${id}`)
+    if (cachedNombre) {
+      result.set(id, cachedNombre)
+      if (cachedLabel) result.set(`${id}__label`, cachedLabel)
+    } else {
+      pendientes.push(id)
+    }
+  }
+
+  if (!pendientes.length) return result
+
+  // Georef permite buscar hasta 100 localidades por lista de IDs
+  // Dividir en chunks de 50 para no superar límites
+  const chunks = []
+  for (let i = 0; i < pendientes.length; i += 50) {
+    chunks.push(pendientes.slice(i, i + 50))
+  }
+
+  for (const chunk of chunks) {
+    try {
+      const data = await fetchGeoref('localidades', {
+        id:     chunk.join(','),
+        campos: 'id,nombre,provincia',
+        max:    chunk.length,
+      })
+      for (const loc of (data.localidades || [])) {
+        const nombre     = loc.nombre || String(loc.id)
+        const provNombre = loc.provincia?.nombre || ''
+        // Guardar solo el nombre (para formatLocalidadProvincia que maneja provincia aparte)
+        result.set(String(loc.id), nombre)
+        cacheSet(`loc_nombre_${loc.id}`, nombre)
+        // Guardar también "localidad / provincia" para el selector del admin
+        const conProv = provNombre ? `${nombre} / ${provNombre}` : nombre
+        result.set(`${loc.id}__label`, conProv)
+        cacheSet(`loc_label_${loc.id}`, conProv)
+      }
+    } catch {
+      // Si falla, usar el ID como fallback
+      chunk.forEach(id => result.set(id, id))
+    }
+  }
+
+  // Fallback para los que no vinieron en la respuesta
+  for (const id of pendientes) {
+    if (!result.has(id)) result.set(id, id)
+  }
+
+  return result
+}
+
+/**
+ * Formatea localidad + provincia como texto legible.
+ * Requiere el Map de resolverNombresLocalidad y el array de provincias.
+ */
+export function formatLocalidadProvincia(localidadId, provinciaId, nombresMap) {
+  const loc  = nombresMap?.get(String(localidadId)) || localidadId || ''
+  const prov = getNombreProvincia(provinciaId) || ''
+  if (!loc && !prov) return '—'
+  if (!prov) return loc
+  if (!loc)  return prov
+  return `${loc} / ${prov}`
 }

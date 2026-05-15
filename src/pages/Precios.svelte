@@ -1,4 +1,4 @@
-<script>
+﻿<script>
   import { onMount, tick } from 'svelte'
 
   // Acción portal: mueve el nodo al body para escapar de cualquier overflow/transform
@@ -12,7 +12,7 @@
   import { comercioActivo, cargarComercio } from '../stores/comercios.js'
   import {
     productos, preciosComercio, cargandoPrecios,
-    cargarProductos, cargarPreciosComercio,
+    cargarProductos, cargarPreciosComercio, preciosCacheInfo,
     buscarOCrearProducto, registrarPrecio,
     reportarPrecioIncorrecto, verificarPrecio,
     CATEGORIAS, UNIDADES,
@@ -33,6 +33,7 @@
   // ── Estado del formulario inline ──────────────────────────────────────
   let mostrarForm    = false
   let mostrarEscaner = false
+  let cacheInfo      = null   // texto de antigüedad del caché
   let paso           = 1      // 1: buscar producto  2: ingresar precio
 
   // Paso 1
@@ -93,10 +94,13 @@
     const c = await cargarComercio(comercioId)
     comercio = c
     if (!c) { error = 'Comercio no encontrado.'; cargando = false; return }
-    await Promise.all([
+    // Promise.allSettled: si productos falla (ej: localidad vacía),
+    // los precios igual se cargan
+    await Promise.allSettled([
       cargarPreciosComercio(comercioId),
       cargarProductos(localidadId),
     ])
+    cacheInfo = preciosCacheInfo(comercioId)
     cargando = false
   })
 
@@ -413,6 +417,24 @@
       </button>
     {/if}
   </header>
+
+  {#if !navigator.onLine && cacheInfo}
+    <div class="cache-banner" role="status">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M1 6v16l7-4 8 4 7-4V2l-7 4-8-4-7 4z"/>
+        <line x1="8" y1="6" x2="8" y2="18"/><line x1="16" y1="2" x2="16" y2="14"/>
+      </svg>
+      Sin conexión · {cacheInfo}
+    </div>
+  {:else if !navigator.onLine}
+    <div class="cache-banner cache-banner-warn" role="status">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+        <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+        <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+      </svg>
+      Sin conexión · precios no disponibles offline para este comercio
+    </div>
+  {/if}
 
   <main class="precios-main scroll-area">
 
@@ -1232,6 +1254,18 @@
     white-space: nowrap;
   }
   .toast.toast-err { background: var(--c-error); }
+
+  /* Banner de caché offline */
+  .cache-banner {
+    display: flex; align-items: center; gap: 7px;
+    padding: 7px 16px; font-size: 12px; font-weight: 600;
+    background: rgba(27,107,58,0.08); color: var(--c-primary);
+    border-bottom: 1px solid rgba(27,107,58,0.15);
+  }
+  .cache-banner-warn {
+    background: rgba(245,163,33,0.1); color: #92400E;
+    border-bottom-color: rgba(245,163,33,0.3);
+  }
 
   /* Precio propio del dueño */
   .precio-card.precio-propio {
