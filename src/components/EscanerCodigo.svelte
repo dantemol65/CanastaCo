@@ -28,9 +28,18 @@
   let resultadoOFF = null
   let flashActivo  = false
   let detectando   = false   // guard: evita procesar dos códigos simultáneamente
+  let scanSession  = 0       // se incrementa en cada reescanear() para invalidar frames viejos
+  // 🛠 Cambiar a false cuando no se necesite más el log de APIs
+  const MOSTRAR_LOG = true
+  let devLog        = []
 
-  // Para el "visor" animado
-  let beepAudio    = null
+  // FIX BUG 2: reasignar stream al video cada vez que Svelte recrea el elemento
+  $: if (videoEl && stream) {
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream
+      videoEl.play().catch(() => {})
+    }
+  }
 
   onMount(async () => {
     try {
@@ -61,9 +70,9 @@
 
   function iniciarLoop() {
     if (usaNativo) {
-      loopNativo()
+      loopNativo(scanSession)
     } else {
-      loopZxing()
+      loopZxing(scanSession)
     }
   }
 
@@ -72,10 +81,10 @@
     loopId = null
   }
 
-  async function loopNativo() {
-    if (!videoEl || estado !== 'escaneando') return
+  async function loopNativo(session) {
+    // Verificar que esta sesión sigue vigente antes de cada iteración
+    if (!videoEl || estado !== 'escaneando' || session !== scanSession) return
     if (videoEl.readyState >= 2) {
-      // Capturar frame al canvas
       const ctx = canvasEl.getContext('2d')
       canvasEl.width  = videoEl.videoWidth
       canvasEl.height = videoEl.videoHeight
@@ -85,38 +94,51 @@
         const bitmap = await createImageBitmap(canvasEl)
         const codigo = await detectarDesdeFrame(detector, bitmap)
         bitmap.close()
-        if (codigo) { await onCodigoDetectado(codigo); return }
+        if (codigo && session === scanSession) {
+          await onCodigoDetectado(codigo, session)
+          return
+        }
       } catch {}
     }
-    loopId = setTimeout(loopNativo, 200)
+    loopId = setTimeout(() => loopNativo(session), 200)
   }
 
-  async function loopZxing() {
-    if (!videoEl || estado !== 'escaneando') return
+  async function loopZxing(session) {
+    if (!videoEl || estado !== 'escaneando' || session !== scanSession) return
     const codigo = await detectarDesdeVideoZxing(videoEl)
-    if (codigo) { await onCodigoDetectado(codigo); return }
-    loopId = setTimeout(loopZxing, 300)
+    if (codigo && session === scanSession) {
+      await onCodigoDetectado(codigo, session)
+      return
+    }
+    loopId = setTimeout(() => loopZxing(session), 300)
   }
 
   // ── Código detectado → buscar en OFF ─────────────────────────────────
 
-  async function onCodigoDetectado(codigo) {
-    // Guard: si ya estamos procesando un código, ignorar
+  async function onCodigoDetectado(codigo, session) {
+    // Guard 1: sesión ya inválida (reescanear() fue llamado mientras este frame estaba en vuelo)
+    if (session !== scanSession) return
+    // Guard 2: ya hay un código siendo procesado en esta sesión
     if (detectando) return
     detectando = true
 
     pararLoop()
     flashActivo = true
     codigoLeido = codigo
+    devLog      = []
     estado = 'buscando'
     playBeep()
     setTimeout(() => flashActivo = false, 300)
 
-    // Capturar el resultado en variable local para que confirmarProducto
-    // siempre despache ESTE resultado y no uno sobreescrito por un re-scan
-    const resultado = await buscarEnOFF(codigo)
+    const resultado = await buscarEnOFF(codigo, (entrada) => {
+      if (MOSTRAR_LOG) devLog = [...devLog, entrada]
+    })
+
+    // Verificar sesión DESPUÉS del await (puede haber cambiado durante la llamada a la API)
+    if (session !== scanSession) return
+
     if (resultado) {
-      resultadoOFF = { ...resultado }   // copia defensiva
+      resultadoOFF = { ...resultado }
       estado = 'encontrado'
     } else {
       estado = 'noEncontrado'
@@ -124,8 +146,7 @@
   }
 
   function confirmarProducto() {
-    // Dispatch de la copia local capturada en este ciclo de escaneo
-    dispatch('encontrado', { ...resultadoOFF })
+    if (resultadoOFF) dispatch('encontrado', { ...resultadoOFF })
   }
 
   function usarSoloCodigoManual() {
@@ -133,12 +154,12 @@
   }
 
   function reescanear() {
+    scanSession++          // invalida TODOS los frames y fetches en vuelo
+    detectando   = false
     codigoLeido  = ''
     resultadoOFF = null
-    detectando   = false
-    estado = 'escaneando'
+    estado       = 'escaneando'
     // Delay: da tiempo al usuario para apartar la cámara del producto anterior
-    // sin el delay el loop detecta el mismo código inmediatamente
     setTimeout(iniciarLoop, 1500)
   }
 
@@ -276,6 +297,17 @@
           — podés corregirlos al guardar el precio.
         </p>
 
+        {#if MOSTRAR_LOG && devLog.length > 0}
+          <details class="dev-log">
+            <summary>🛠 Dev: APIs consultadas</summary>
+            {#each devLog as entrada}
+              <div class="dev-log-entry" class:dev-ok={entrada.startsWith('✅')} class:dev-err={entrada.startsWith('❌')}>
+                {entrada}
+              </div>
+            {/each}
+          </details>
+        {/if}
+
         <div class="resultado-acciones">
           <button class="btn btn-primary btn-full" on:click={confirmarProducto}>
             Usar este producto →
@@ -300,6 +332,17 @@
           El código <strong>{codigoLeido}</strong> no está en la base de datos.
           Podés crear el producto manualmente.
         </p>
+
+        {#if MOSTRAR_LOG && devLog.length > 0}
+          <details class="dev-log" open>
+            <summary>🛠 Dev: APIs consultadas</summary>
+            {#each devLog as entrada}
+              <div class="dev-log-entry" class:dev-ok={entrada.startsWith('✅')} class:dev-err={entrada.startsWith('❌')}>
+                {entrada}
+              </div>
+            {/each}
+          </details>
+        {/if}
 
         <div class="resultado-acciones">
           <button class="btn btn-primary btn-full" on:click={usarSoloCodigoManual}>
@@ -515,4 +558,26 @@
     font-size: 13px; text-decoration: underline; cursor: pointer;
     text-align: center; padding: 6px; font-family: var(--f-ui);
   }
+
+  /* ── Panel de desarrollo (solo visible en modo DEV) ── */
+  .dev-log {
+    margin-top: 10px;
+    border: 1px dashed #F59E0B;
+    border-radius: 8px;
+    padding: 6px 10px;
+    background: #FFFBEB;
+    font-family: 'Courier New', monospace;
+  }
+  .dev-log summary {
+    font-size: 11px; font-weight: 700; color: #92400E;
+    cursor: pointer; user-select: none; list-style: none;
+    font-family: var(--f-ui);
+  }
+  .dev-log-entry {
+    font-size: 11px; padding: 3px 0;
+    border-top: 1px solid rgba(0,0,0,0.06);
+    line-height: 1.4;
+  }
+  .dev-log-entry.dev-ok  { color: #065F46; }
+  .dev-log-entry.dev-err { color: #991B1B; }
 </style>

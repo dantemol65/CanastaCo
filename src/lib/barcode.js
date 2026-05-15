@@ -248,16 +248,47 @@ async function buscarGoUPC(codigo) {
  * @param {string} codigo
  * @returns {Promise<{codigoBarras, nombre, marca, categoria, unidad, imagen, fuente} | null>}
  */
-export async function buscarEnOFF(codigo) {
+/**
+ * @param {string} codigo
+ * @param {((entrada: string) => void) | null} onLog  — callback para log en tiempo real (solo DEV)
+ */
+export async function buscarEnOFF(codigo, onLog = null) {
   // Nombre de la función mantenido por compatibilidad con EscanerCodigo.svelte
+  const DEV = import.meta.env.DEV
+  const log = []
 
-  // Las tres se lanzan en paralelo con Promise.any para minimizar latencia
-  // Si una falla o devuelve null, se prueba la siguiente
-  const apis = [buscarOFF, buscarOBF, buscarGoUPC]
+  const APIs = [
+    { nombre: 'Open Food Facts',   fn: buscarOFF  },
+    { nombre: 'Open Beauty Facts', fn: buscarOBF  },
+    { nombre: 'Go UPC',            fn: buscarGoUPC },
+  ]
 
-  for (const api of apis) {
-    const r = await api(codigo)
-    if (r) return r
+  for (const { nombre, fn } of APIs) {
+    const t0 = Date.now()
+    const r  = await fn(codigo)
+    const ms = Date.now() - t0
+
+    const entrada = r
+      ? `✅ ${nombre} → "${r.nombre}" (${ms}ms)`
+      : `❌ ${nombre} → no encontrado (${ms}ms)`
+
+    log.push(entrada)
+    onLog?.(entrada)  // siempre notificar al caller, él decide si mostrar
+
+    if (r) {
+      if (DEV) {
+        console.groupCollapsed(`🔍 Barcode ${codigo} — encontrado en ${nombre}`)
+        log.forEach(l => console.log(l))
+        console.groupEnd()
+      }
+      return r
+    }
+  }
+
+  if (DEV) {
+    console.groupCollapsed(`🔍 Barcode ${codigo} — no encontrado en ninguna API`)
+    log.forEach(l => console.log(l))
+    console.groupEnd()
   }
 
   return null
