@@ -272,8 +272,7 @@
         </div>
 
         <p class="fuente-nota">
-          Datos de
-          <a href="https://world.openfoodfacts.org" target="_blank" rel="noopener">Open Food Facts</a>
+          Datos de <strong>{resultadoOFF.fuente}</strong>
           — podés corregirlos al guardar el precio.
         </p>
 

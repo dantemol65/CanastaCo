@@ -13,6 +13,7 @@
   let estado       = 'idle'
   let transcripcion = ''
   let errorMsg      = ''
+  let mostrarTooltip = false
 
   $: disponible = soportaVoz()
 
@@ -124,6 +125,28 @@
   {:else if estado === 'listo'}
     <div class="voz-feedback listo-feedback" role="status">
       ✓ Datos completados
+    </div>
+  {/if}
+{:else}
+  <!-- Dispositivo sin soporte de reconocimiento de voz -->
+  <button
+    class="btn-voz btn-voz-no-soportado"
+    disabled
+    title="Tu navegador no soporta reconocimiento de voz. Usá Chrome en Android."
+    aria-label="Reconocimiento de voz no disponible"
+    on:click={() => mostrarTooltip = !mostrarTooltip}
+  >
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" stroke-dasharray="4 2"/>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+      <line x1="12" y1="19" x2="12" y2="23"/>
+      <line x1="8"  y1="23" x2="16" y2="23"/>
+      <line x1="2"  y1="2"  x2="22" y2="22" stroke-width="2"/>
+    </svg>
+  </button>
+  {#if mostrarTooltip}
+    <div class="voz-feedback no-soportado-feedback" role="alert">
+      🎤 Tu navegador no soporta reconocimiento de voz. Usá Chrome en Android o Safari en iOS 17+.
     </div>
   {/if}
 {/if}
@@ -240,6 +263,21 @@
   @keyframes pulsoAnim {
     0%,100% { opacity: 1; transform: scale(1); }
     50%     { opacity: 0.4; transform: scale(0.7); }
+  }
+
+  /* Botón no soportado */
+  .btn-voz-no-soportado {
+    opacity: 0.4;
+    cursor: not-allowed !important;
+    border-style: dashed;
+  }
+  .no-soportado-feedback {
+    background: var(--c-surface-2);
+    color: var(--c-text-mid);
+    border: 1px solid var(--c-border);
+    font-style: normal;
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   /* Spinner pequeño inline */

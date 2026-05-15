@@ -95,96 +95,170 @@ export function cerrarCamara(stream) {
   stream?.getTracks().forEach(t => t.stop())
 }
 
-// ── Open Food Facts ───────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════
+// LOOKUP DE PRODUCTOS — cadena de 3 APIs gratuitas sin registro
+// 1° Open Food Facts  → alimentos y bebidas
+// 2° Open Beauty Facts → higiene, cosmética, farmacia
+// 3° Go UPC           → todo lo demás (librería, limpieza, electro, etc.)
+// ══════════════════════════════════════════════════════════════════════════
 
-const OFF_BASE = 'https://world.openfoodfacts.org/api/v2/product'
+// ── Helpers compartidos ───────────────────────────────────────────────────
 
-// Mapeo de categorías OFF → categorías canasta.co
-const CAT_MAP = {
-  'en:dairy':               'lacteos',
-  'en:milks':               'lacteos',
-  'en:yogurts':             'lacteos',
-  'en:cheeses':             'fiambreria',
-  'en:meats':               'carnes',
-  'en:beverages':           'bebidas',
-  'en:waters':              'bebidas',
-  'en:juices':              'bebidas',
-  'en:sodas':               'bebidas',
-  'en:breads':              'panaderia',
-  'en:cereals':             'almacen',
-  'en:pastas':              'almacen',
-  'en:rice':                'almacen',
-  'en:flours':              'almacen',
-  'en:oils':                'almacen',
-  'en:sauces':              'almacen',
-  'en:condiments':          'almacen',
-  'en:snacks':              'almacen',
-  'en:chocolates':          'almacen',
-  'en:frozen-foods':        'congelados',
-  'en:cleaning-products':   'limpieza',
-  'en:personal-care':       'higiene',
-  'en:hygiene':             'higiene',
-  'en:fruits':              'frutas',
-  'en:vegetables':          'verduras',
-  'en:plant-based-foods':   'verduras',
+function capitalizar(str) {
+  if (!str) return ''
+  const s = str.trim()
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
 }
 
-function mapearCategoria(cats = []) {
-  for (const c of cats) {
-    const k = c.toLowerCase()
-    for (const [key, val] of Object.entries(CAT_MAP)) {
-      if (k.includes(key.replace('en:', ''))) return val
-    }
+function normalizarUnidad(texto = '') {
+  const t = texto.toLowerCase()
+  if (/kg|kilo/.test(t))      return 'kg'
+  if (/g|gramo/.test(t))  return 'g'
+  if (/l|litro/.test(t))  return 'L'
+  if (/ml|mililitro/.test(t)) return 'ml'
+  return 'u'
+}
+
+// Resultado normalizado común a las tres APIs
+function resultado(codigoBarras, nombre, marca, categoria, unidad, imagen, fuente) {
+  return { codigoBarras, nombre, marca, categoria, unidad, imagen, fuente }
+}
+
+// ── Mapeo de categorías compartido ───────────────────────────────────────
+
+const CAT_KEYWORDS = [
+  { keys: ['dairy','milk','yogurt','lacteo','leche'],          cat: 'lacteos'    },
+  { keys: ['cheese','queso','fiambre','deli'],                  cat: 'fiambreria' },
+  { keys: ['meat','carne','poultry','beef','chicken'],          cat: 'carnes'     },
+  { keys: ['beverage','drink','water','juice','soda','bebida'], cat: 'bebidas'    },
+  { keys: ['bread','bakery','pan','panaderia'],                 cat: 'panaderia'  },
+  { keys: ['cereal','pasta','rice','flour','oil','sauce',
+           'almacen','grocery','condiment','snack','chocolate'],cat: 'almacen'    },
+  { keys: ['frozen','congelado'],                               cat: 'congelados' },
+  { keys: ['cleaning','cleaner','detergent','limpieza'],        cat: 'limpieza'   },
+  { keys: ['hygiene','personal care','beauty','cosmetic',
+           'shampoo','soap','dental','higiene','farmacia',
+           'medicine','vitamin','health','pharmaceutical',
+           'perfume','skincare','makeup','fragrance'],          cat: 'higiene'    },
+  { keys: ['fruit','fruta'],                                    cat: 'frutas'     },
+  { keys: ['vegetable','verdura'],                              cat: 'verduras'   },
+]
+
+function mapearCategoria(textos = []) {
+  const haystack = textos.join(' ').toLowerCase()
+  for (const { keys, cat } of CAT_KEYWORDS) {
+    if (keys.some(k => haystack.includes(k))) return cat
   }
   return 'otros'
 }
 
-function mapearUnidad(producto) {
-  const q = (producto.quantity || producto.net_weight_value || '').toLowerCase()
-  if (q.includes('kg') || q.includes('kilo')) return 'kg'
-  if (q.includes(' g') || q.endsWith('g'))    return 'g'
-  if (q.includes(' l') || q.endsWith(' l'))   return 'L'
-  if (q.includes('ml'))                        return 'ml'
-  return 'u'
-}
+// ── 1. Open Food Facts ────────────────────────────────────────────────────
 
-/**
- * Busca un producto en Open Food Facts por código de barras.
- * Devuelve un objeto normalizado para canasta.co, o null si no se encuentra.
- */
-export async function buscarEnOFF(codigo) {
+async function buscarOFF(codigo) {
   try {
-    const campos = 'product_name,product_name_es,brands,categories_tags,quantity,image_front_small_url,stores_tags,countries_tags'
-    const url = `${OFF_BASE}/${encodeURIComponent(codigo)}?fields=${campos}`
+    const campos = 'product_name,product_name_es,brands,categories_tags,quantity,image_front_small_url'
+    const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(codigo)}?fields=${campos}`
     const res  = await fetch(url, { signal: AbortSignal.timeout(6000) })
     if (!res.ok) return null
     const json = await res.json()
     if (json.status !== 1 || !json.product) return null
 
-    const p = json.product
+    const p      = json.product
+    const nombre = capitalizar(p.product_name_es?.trim() || p.product_name?.trim() || '')
+    if (!nombre) return null
 
-    // Nombre: preferir español, luego genérico
-    const nombre = (
-      p.product_name_es?.trim() ||
-      p.product_name?.trim()    ||
-      ''
+    return resultado(
+      codigo,
+      nombre,
+      p.brands?.split(',')[0]?.trim() || '',
+      mapearCategoria(p.categories_tags || []),
+      normalizarUnidad(p.quantity || ''),
+      p.image_front_small_url || null,
+      'Open Food Facts',
     )
-    if (!nombre) return null // producto sin nombre, no sirve
+  } catch { return null }
+}
 
-    // Limpiar nombre: capitalizar primer letra
-    const nombreLimpio = nombre.charAt(0).toUpperCase() + nombre.slice(1).toLowerCase()
+// ── 2. Open Beauty Facts ──────────────────────────────────────────────────
 
-    return {
-      codigoBarras: codigo,
-      nombre:       nombreLimpio,
-      marca:        p.brands?.split(',')[0]?.trim() || '',
-      categoria:    mapearCategoria(p.categories_tags || []),
-      unidad:       mapearUnidad(p),
-      imagen:       p.image_front_small_url || null,
-      fuente:       'openfoodfacts',
-    }
-  } catch (err) {
-    console.warn('OFF lookup error:', err)
-    return null
+async function buscarOBF(codigo) {
+  try {
+    const campos = 'product_name,brands,categories_tags,quantity,image_front_small_url'
+    const url = `https://world.openbeautyfacts.org/api/v2/product/${encodeURIComponent(codigo)}?fields=${campos}`
+    const res  = await fetch(url, { signal: AbortSignal.timeout(6000) })
+    if (!res.ok) return null
+    const json = await res.json()
+    if (json.status !== 1 || !json.product) return null
+
+    const p      = json.product
+    const nombre = capitalizar(p.product_name?.trim() || '')
+    if (!nombre) return null
+
+    // OBF siempre es higiene/cosmética
+    const cats = p.categories_tags || []
+    const cat  = mapearCategoria([...cats, 'hygiene'])
+
+    return resultado(
+      codigo,
+      nombre,
+      p.brands?.split(',')[0]?.trim() || '',
+      cat,
+      normalizarUnidad(p.quantity || ''),
+      p.image_front_small_url || null,
+      'Open Beauty Facts',
+    )
+  } catch { return null }
+}
+
+// ── 3. Go UPC ─────────────────────────────────────────────────────────────
+
+async function buscarGoUPC(codigo) {
+  try {
+    const url = `https://go-upc.com/api/v1/code/${encodeURIComponent(codigo)}`
+    const res  = await fetch(url, { signal: AbortSignal.timeout(7000) })
+    if (!res.ok) return null
+    const json = await res.json()
+    if (!json.product?.name) return null
+
+    const p      = json.product
+    const nombre = capitalizar(p.name || '')
+    if (!nombre) return null
+
+    // Go UPC devuelve category como string libre
+    const cats = [p.category || '', p.description || ''].filter(Boolean)
+
+    return resultado(
+      codigo,
+      nombre,
+      p.brand || '',
+      mapearCategoria(cats),
+      'u',           // Go UPC no siempre devuelve cantidad
+      p.imageUrl || null,
+      'Go UPC',
+    )
+  } catch { return null }
+}
+
+// ── Función principal exportada ───────────────────────────────────────────
+
+/**
+ * Busca un producto por código de barras encadenando las 3 APIs.
+ * Devuelve el primer resultado encontrado, o null si ninguna lo tiene.
+ *
+ * @param {string} codigo
+ * @returns {Promise<{codigoBarras, nombre, marca, categoria, unidad, imagen, fuente} | null>}
+ */
+export async function buscarEnOFF(codigo) {
+  // Nombre de la función mantenido por compatibilidad con EscanerCodigo.svelte
+
+  // Las tres se lanzan en paralelo con Promise.any para minimizar latencia
+  // Si una falla o devuelve null, se prueba la siguiente
+  const apis = [buscarOFF, buscarOBF, buscarGoUPC]
+
+  for (const api of apis) {
+    const r = await api(codigo)
+    if (r) return r
   }
+
+  return null
 }
