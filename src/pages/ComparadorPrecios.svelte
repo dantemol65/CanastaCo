@@ -84,7 +84,9 @@
   }
 
   function volver() {
-    if (origenComercioId) {
+    if (origenComercioId === 'home') {
+      currentPage.set('home')
+    } else if (origenComercioId) {
       currentPage.set('precios-comercio:' + origenComercioId)
     } else {
       currentPage.set('buscar')

@@ -36,6 +36,7 @@
     }
   })
   import BottomNav from '../components/BottomNav.svelte'
+  import { productos, cargarProductos, CATEGORIAS } from '../stores/precios.js'
 
   $: user    = $currentUser
   $: profile = $userProfile
@@ -97,6 +98,34 @@
 
   function goToPerfil() { currentPage.set('perfil') }
   function goAdmin()    { currentPage.set('admin') }
+
+  // ── Buscador de productos ─────────────────────────────────────────────
+  let busquedaProd = ''
+  let prodCargados = false
+  let cargandoProd = false
+
+  $: resultadosBusq = busquedaProd.trim().length >= 2
+    ? $productos.filter(p =>
+        p.nombre?.toLowerCase().includes(busquedaProd.toLowerCase()) ||
+        p.marca?.toLowerCase().includes(busquedaProd.toLowerCase())
+      ).slice(0, 8)
+    : []
+
+  async function cargarCatalogo() {
+    if (prodCargados || !profile?.localidad) return
+    cargandoProd = true
+    await cargarProductos(profile.localidad)
+    prodCargados = true
+    cargandoProd = false
+  }
+
+  function irComparador(productoId) {
+    currentPage.set('comparador:' + productoId + '__home')
+  }
+
+  function catEmoji(id) {
+    return CATEGORIAS.find(c => c.id === id)?.emoji || '📦'
+  }
 </script>
 
 <div class="app-shell home-shell">
@@ -160,6 +189,56 @@
       <section class="greeting-section">
         <h1 class="greeting-title">¡Hola, <em>{displayName}</em>!</h1>
         <p class="greeting-sub">Comercios y precios de tu localidad</p>
+      </section>
+
+      <!-- Buscador de productos -->
+      <section class="busq-section">
+        <div class="busq-input-wrap">
+          <svg class="busq-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input
+            type="search"
+            class="busq-input"
+            placeholder="Buscá un producto y comparás precios…"
+            bind:value={busquedaProd}
+            on:focus={cargarCatalogo}
+            autocomplete="off"
+            autocorrect="off"
+          />
+          {#if busquedaProd}
+            <button class="busq-clear" on:click={() => busquedaProd = ''} aria-label="Limpiar">✕</button>
+          {/if}
+        </div>
+
+        {#if cargandoProd}
+          <div class="busq-loading">
+            <div class="spinner" style="width:18px;height:18px;border-width:2px;border-top-color:var(--c-primary)"></div>
+            <span>Cargando catálogo…</span>
+          </div>
+        {:else if resultadosBusq.length > 0}
+          <div class="busq-resultados">
+            {#each resultadosBusq as prod (prod.id)}
+              <button class="busq-item" on:click={() => irComparador(prod.id)}>
+                <span class="busq-emoji">{catEmoji(prod.categoria)}</span>
+                <div class="busq-info">
+                  <span class="busq-nombre">{prod.nombre}</span>
+                  {#if prod.marca}<span class="busq-marca">{prod.marca}</span>{/if}
+                </div>
+                <div class="busq-right">
+                  <span class="busq-unidad">{prod.unidad}</span>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-light)" stroke-width="2.5" stroke-linecap="round">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </div>
+              </button>
+            {/each}
+          </div>
+        {:else if busquedaProd.trim().length >= 2}
+          <div class="busq-empty">
+            Sin resultados para "<strong>{busquedaProd}</strong>" en tu localidad
+          </div>
+        {/if}
       </section>
 
       <!-- Módulos completados -->
@@ -522,4 +601,57 @@
     display: block; margin-bottom: 6px;
   }
   .info-card p { font-size: 13px; color: var(--c-text-mid); line-height: 1.55; }
+
+  /* ── Buscador de productos ─────────────────────────────────────────── */
+  .busq-section { margin: 0; }
+
+  .busq-input-wrap {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--c-surface); border: 1.5px solid var(--c-border);
+    border-radius: var(--r-xl); padding: 12px 16px;
+    box-shadow: var(--s-xs);
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+  .busq-input-wrap:focus-within {
+    border-color: var(--c-primary);
+    box-shadow: 0 0 0 3px rgba(27,107,58,0.10), var(--s-sm);
+  }
+  .busq-icon { color: var(--c-text-light); flex-shrink: 0; }
+  .busq-input {
+    flex: 1; border: none; background: transparent;
+    font-family: var(--f-ui); font-size: 15px; color: var(--c-text);
+  }
+  .busq-input::placeholder { color: var(--c-text-light); }
+  .busq-input:focus { outline: none; }
+  .busq-clear {
+    background: none; border: none; color: var(--c-text-light);
+    font-size: 13px; cursor: pointer; padding: 2px 4px; flex-shrink: 0;
+  }
+  .busq-loading {
+    display: flex; align-items: center; gap: 10px;
+    padding: 14px 4px; font-size: 13px; color: var(--c-text-light);
+  }
+  .busq-resultados {
+    margin-top: 8px; background: var(--c-surface);
+    border-radius: var(--r-lg); border: 1px solid var(--c-border);
+    overflow: hidden; box-shadow: var(--s-sm);
+  }
+  .busq-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; width: 100%; text-align: left;
+    background: none; border: none; border-bottom: 1px solid var(--c-border);
+    cursor: pointer; transition: background 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .busq-item:last-child { border-bottom: none; }
+  .busq-item:active { background: var(--c-surface-2); }
+  .busq-emoji { font-size: 18px; flex-shrink: 0; }
+  .busq-info  { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .busq-nombre { font-size: 14px; font-weight: 700; color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .busq-marca  { font-size: 11px; color: var(--c-text-light); }
+  .busq-right  { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .busq-unidad { font-size: 11px; color: var(--c-text-light); background: var(--c-surface-2); padding: 2px 7px; border-radius: var(--r-full); }
+  .busq-empty  { padding: 14px 4px; font-size: 13px; color: var(--c-text-light); text-align: center; }
+  .busq-empty strong { color: var(--c-text); }
+
 </style>
