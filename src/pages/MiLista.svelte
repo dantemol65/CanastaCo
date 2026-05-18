@@ -5,6 +5,7 @@
     listaActiva, cargarLista,
     agregarItem, quitarItem,
     solicitarProducto, resolverItemPendiente,
+    resolverPendientesDeLista,
   } from '../stores/listas_compras.js'
   import { productos, cargarProductos, CATEGORIAS } from '../stores/precios.js'
   import BottomNav from '../components/BottomNav.svelte'
@@ -23,9 +24,9 @@
   $: perfil    = $userProfile
   $: localidad = perfil?.localidad || ''
 
-  // Recargar cuando vuelve a ser la página activa (por si se cubrió algún pendiente)
+  // Recargar y resolver pendientes cuando vuelve a ser la página activa
   $: if ($currentPage === 'mi-lista:' + listaId) {
-    cargarLista(listaId)
+    cargarLista(listaId).then(() => resolverPendientesDeLista(listaId).catch(() => {}))
   }
 
   $: resultados = busqueda.trim().length >= 2
@@ -44,6 +45,8 @@
     try {
       const l = await cargarLista(listaId)
       if (!l) { error = 'Lista no encontrada.'; cargando = false; return }
+      // Resolver ítems pendientes cuya solicitud ya fue cubierta
+      resolverPendientesDeLista(listaId).catch(() => {})
     } catch (e) {
       error = 'Error al cargar la lista.'
     } finally {
@@ -97,7 +100,7 @@
   }
 
   async function handleQuitar(productoId, nombre) {
-    await quitarItem(listaId, productoId)
+    await quitarItem(listaId, productoId, nombre)
     showToast(`${nombre} quitado`)
   }
 
@@ -238,7 +241,7 @@
                   </div>
                   <button
                     class="btn-quitar"
-                    on:click={() => handleQuitar(item.productoId, item.productoNombre)}
+                    on:click={() => handleQuitar(null, item.productoNombre)}
                     aria-label="Quitar"
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">

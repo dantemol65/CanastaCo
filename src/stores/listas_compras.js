@@ -111,11 +111,23 @@ export async function agregarItem(listaId, producto) {
   misListas.update(l => l.map(x => x.id === listaId ? actualizada : x))
 }
 
-export async function quitarItem(listaId, productoId) {
+export async function quitarItem(listaId, productoId, productoNombre = null) {
   const lista = get(listaActiva)
   if (!lista) return
 
-  const nuevosItems = lista.items.filter(i => i.productoId !== productoId)
+  // Para ítems pendientes (productoId === null), usar el nombre como identificador
+  // Para ítems normales, usar productoId
+  let removido = false
+  const nuevosItems = lista.items.filter(i => {
+    if (removido) return true  // ya eliminamos uno, conservar el resto
+    if (productoId !== null && i.productoId === productoId) {
+      removido = true; return false
+    }
+    if (productoId === null && i.productoNombre === productoNombre) {
+      removido = true; return false
+    }
+    return true
+  })
   await updateDoc(doc(db, 'listas_compras', listaId), {
     items:     nuevosItems,
     editadaEn: serverTimestamp(),
@@ -542,6 +554,89 @@ export async function marcarSolicitudCubierta(solicitudId, productoReal = null) 
   } catch (e) {
     console.error('marcarSolicitudCubierta:', e)
   }
+}
+
+/**
+ * Verifica los ítems pendientes de una lista y los resuelve si la solicitud
+ * ya fue cubierta. Lo ejecuta el dueño de la lista al abrirla.
+ */
+export async function resolverPendientesDeLista(listaId) {
+  const lista = get(listaActiva)
+  if (!lista) return
+
+  const pendientes = lista.items?.filter(i => i.pendiente && i.solicitudId) || []
+  if (!pendientes.length) return
+
+  let hubocambios = false
+  let nuevosItems = [...lista.items]
+
+  for (const item of pendientes) {
+    try {
+      const snap = await getDoc(doc(db, 'solicitudes_productos', item.solicitudId))
+      if (!snap.exists()) continue
+      const sol = snap.data()
+
+      // Si ya fue cubierta, buscar el producto real por nombre normalizado
+      if (sol.estado !== 'cubierto') continue
+
+      // Buscar el producto en el catálogo local por nombre normalizado
+      const nombreNorm = item.productoNombre.toLowerCase()
+      const qProd = query(
+        collection(db, 'productos'),
+        where('localidad',  '==', lista.localidad),
+        where('nombreNorm', '==', nombreNorm)
+      )
+      const snapProd = await getDocs(qProd)
+
+      let productoReal = null
+      if (!snapProd.empty) {
+        productoReal = { id: snapProd.docs[0].id, ...snapProd.docs[0].data() }
+      } else {
+        // Búsqueda parcial — el nombre puede haber cambiado ligeramente
+        const qProdAll = query(
+          collection(db, 'productos'),
+          where('localidad', '==', lista.localidad)
+        )
+        const snapAll = await getDocs(qProdAll)
+        const match = snapAll.docs.find(d =>
+          d.data().nombreNorm?.includes(nombreNorm) ||
+          nombreNorm.includes(d.data().nombreNorm || '')
+        )
+        if (match) productoReal = { id: match.id, ...match.data() }
+      }
+
+      if (!productoReal) continue
+
+      // Reemplazar el ítem pendiente por el producto real
+      nuevosItems = nuevosItems.map(i =>
+        i.pendiente && i.solicitudId === item.solicitudId
+          ? {
+              productoId:        productoReal.id,
+              productoNombre:    productoReal.nombre,
+              productoMarca:     productoReal.marca     || '',
+              productoUnidad:    productoReal.unidad    || 'u',
+              productoCategoria: productoReal.categoria || 'otros',
+              pendiente:         false,
+            }
+          : i
+      )
+      hubocambios = true
+    } catch (e) {
+      console.error('resolverPendientesDeLista:', e)
+    }
+  }
+
+  if (!hubocambios) return
+
+  // Guardar en Firestore (el dueño siempre puede escribir su propia lista)
+  await updateDoc(doc(db, 'listas_compras', listaId), {
+    items:     nuevosItems,
+    editadaEn: serverTimestamp(),
+  })
+
+  const actualizada = { ...lista, items: nuevosItems }
+  listaActiva.set(actualizada)
+  misListas.update(l => l.map(x => x.id === listaId ? actualizada : x))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
