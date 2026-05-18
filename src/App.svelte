@@ -9,7 +9,10 @@
   import DetalleComercio  from './pages/DetalleComercio.svelte'
   import Admin            from './pages/Admin.svelte'
   // Módulo 3 — Precios
-  import Precios          from './pages/Precios.svelte'
+  import MisListas          from './pages/MisListas.svelte'
+  import MiLista            from './pages/MiLista.svelte'
+  import OptimizadorCompras from './pages/OptimizadorCompras.svelte'
+  import Precios            from './pages/Precios.svelte'
   import ListaPrecios     from './pages/ListaPrecios.svelte'
   import ListaTematica    from './pages/ListaTematica.svelte'
   import ComparadorPrecios from './pages/ComparadorPrecios.svelte'
@@ -72,6 +75,15 @@
 
 {:else if basePage === 'publicar'}
   <PublicarLanding />
+
+{:else if basePage === 'mis-listas'}
+  <MisListas />
+
+{:else if basePage === 'mi-lista'}
+  <MiLista listaId={pageParam} />
+
+{:else if basePage === 'optimizador'}
+  <OptimizadorCompras listaId={pageParam} />
 
 {/if}
 

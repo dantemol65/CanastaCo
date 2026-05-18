@@ -1,17 +1,21 @@
 <script>
+  // ── Imports ───────────────────────────────────────────────────────────────
+  import { onMount } from 'svelte'
+  import { writable } from 'svelte/store'
   import { currentUser, userProfile, currentPage, pendingSync, syncPendingProfile } from '../stores/auth.js'
   import { totalNoLeidas, cargarNotificaciones } from '../stores/notificaciones.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
-  import { onMount } from 'svelte'
-  import { writable } from 'svelte/store'
+  import { localidades as allLocalidades } from '../data/argentina.js'
+  import { productos, cargarProductos, CATEGORIAS } from '../stores/precios.js'
+  import { cargarSolicitudes } from '../stores/listas_compras.js'
+  import { productoSolicitadoSeleccionado } from '../stores/contexto.js'
+  import BottomNav from '../components/BottomNav.svelte'
 
+  // ── Conectividad ──────────────────────────────────────────────────────────
   const offline = writable(false)
 
-  // Verificación real de conectividad — navigator.onLine no es confiable
-  // cuando hay red local sin internet
   async function checkConexion() {
     try {
-      // Fetch a un recurso mínimo de Google con timeout corto
       const ctrl = new AbortController()
       setTimeout(() => ctrl.abort(), 3000)
       await fetch('https://www.google.com/generate_204', {
@@ -23,32 +27,18 @@
     }
   }
 
-  onMount(() => {
-    checkConexion()
-    window.addEventListener('online',  checkConexion)
-    window.addEventListener('offline', () => offline.set(true))
-    // Verificar cada 30 segundos
-    const interval = setInterval(checkConexion, 30000)
-    return () => {
-      window.removeEventListener('online',  checkConexion)
-      window.removeEventListener('offline', () => offline.set(true))
-      clearInterval(interval)
-    }
-  })
-  import BottomNav from '../components/BottomNav.svelte'
-  import { productos, cargarProductos, CATEGORIAS } from '../stores/precios.js'
-
+  // ── Reactivos ─────────────────────────────────────────────────────────────
   $: user    = $currentUser
   $: profile = $userProfile
 
+  // Recargar solicitudes cada vez que Home se vuelve la página activa
+  $: if ($currentPage === 'home') {
+    cargarSolicitudesHome()
+  }
+
   $: displayName  = profile?.alias || user?.displayName?.split(' ')[0] || 'Usuario'
   $: displayPhoto = profile?.foto  || user?.photoURL || cargarFotoCacheada() || ''
-  $: localidad    = profile?.localidad
-    ? profile.localidad.split('-').pop()  // ID final, mejoramos con datos reales
-    : 'tu localidad'
 
-  // Obtener nombre legible de localidad
-  import { localidades as allLocalidades } from '../data/argentina.js'
   $: localidadNombre = (() => {
     if (!profile?.localidad) return 'tu zona'
     const deptId = profile.departamento || ''
@@ -57,49 +47,58 @@
     return locs.find(l => l.id === locId)?.nombre || profile.localidad
   })()
 
+  // ── Módulos ───────────────────────────────────────────────────────────────
   const modulos = [
     {
-      id: 2,
-      icon: '🏪',
-      titulo: 'Comercios',
+      id: 2, icon: '🏪', titulo: 'Comercios',
       desc: 'Explorá comercios de tu zona, verificalos y agregá nuevos.',
-      color: '#1B6B3A',
-      disponible: true,
-      pagina: 'buscar',
+      color: '#1B6B3A', disponible: true, pagina: 'buscar',
     },
     {
-      id: 3,
-      icon: '🏷️',
-      titulo: 'Precios',
+      id: 3, icon: '🏷️', titulo: 'Precios',
       desc: 'Consultá, cargá y comparás precios entre comercios de tu localidad.',
-      color: '#0277BD',
-      disponible: true,
-      pagina: 'publicar',
+      color: '#0277BD', disponible: true, pagina: 'publicar',
     },
     {
-      id: 4,
-      icon: '📊',
-      titulo: 'Estadísticas',
+      id: 4, icon: '📊', titulo: 'Estadísticas',
       desc: 'Mirá cómo evolucionan los precios en tu barrio.',
-      color: '#E65100',
-      disponible: false,
+      color: '#E65100', disponible: false,
     },
     {
-      id: 5,
-      icon: '🤖',
-      titulo: 'Asistente IA',
+      id: 5, icon: '🤖', titulo: 'Asistente IA',
       desc: 'Cargá listas por voz o foto con ayuda de inteligencia artificial.',
-      color: '#6A1B9A',
-      disponible: false,
+      color: '#6A1B9A', disponible: false,
     },
   ]
 
-  onMount(() => { cargarNotificaciones() })
+  // ── Solicitudes de la comunidad ───────────────────────────────────────────
+  let solicitudes     = []
+  let solExpandido    = false
+  let solSeleccionado = null
+  let avisoProd       = false
+  let avisoTimer      = null
 
-  function goToPerfil() { currentPage.set('perfil') }
-  function goAdmin()    { currentPage.set('admin') }
+  async function cargarSolicitudesHome() {
+    if (!profile?.localidad) return
+    solicitudes = await cargarSolicitudes(profile.localidad)
+  }
 
-  // ── Buscador de productos ─────────────────────────────────────────────
+  function seleccionarSolicitado(sol) {
+    solSeleccionado = sol
+    productoSolicitadoSeleccionado.set(sol)
+    avisoProd = true
+    clearTimeout(avisoTimer)
+    avisoTimer = setTimeout(() => { avisoProd = false }, 4000)
+  }
+
+  function cancelarSeleccionado() {
+    solSeleccionado = null
+    productoSolicitadoSeleccionado.set(null)
+    avisoProd = false
+    clearTimeout(avisoTimer)
+  }
+
+  // ── Buscador de productos ─────────────────────────────────────────────────
   let busquedaProd = ''
   let prodCargados = false
   let cargandoProd = false
@@ -126,6 +125,27 @@
   function catEmoji(id) {
     return CATEGORIAS.find(c => c.id === id)?.emoji || '📦'
   }
+
+  // ── Navegación ────────────────────────────────────────────────────────────
+  function goToPerfil() { currentPage.set('perfil') }
+  function goAdmin()    { currentPage.set('admin') }
+  function goMisListas(){ currentPage.set('mis-listas') }
+
+  // ── Mount ─────────────────────────────────────────────────────────────────
+  onMount(() => {
+    checkConexion()
+    window.addEventListener('online',  checkConexion)
+    window.addEventListener('offline', () => offline.set(true))
+    const interval = setInterval(checkConexion, 30000)
+    cargarNotificaciones()
+    const foto = cargarFotoCacheada()
+    cargarSolicitudesHome()
+    return () => {
+      window.removeEventListener('online',  checkConexion)
+      window.removeEventListener('offline', () => offline.set(true))
+      clearInterval(interval)
+    }
+  })
 </script>
 
 <div class="app-shell home-shell">
@@ -210,7 +230,6 @@
             <button class="busq-clear" on:click={() => busquedaProd = ''} aria-label="Limpiar">✕</button>
           {/if}
         </div>
-
         {#if cargandoProd}
           <div class="busq-loading">
             <div class="spinner" style="width:18px;height:18px;border-width:2px;border-top-color:var(--c-primary)"></div>
@@ -235,11 +254,77 @@
             {/each}
           </div>
         {:else if busquedaProd.trim().length >= 2}
-          <div class="busq-empty">
-            Sin resultados para "<strong>{busquedaProd}</strong>" en tu localidad
-          </div>
+          <div class="busq-empty">Sin resultados para "<strong>{busquedaProd}</strong>" en tu localidad</div>
         {/if}
       </section>
+
+      <!-- Banner solicitudes comunidad -->
+      {#if solicitudes.length > 0}
+        <div class="sol-banner-home">
+          <button
+            class="sol-banner-header"
+            on:click={() => solExpandido = !solExpandido}
+            aria-expanded={solExpandido}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" stroke-width="2" stroke-linecap="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+            </svg>
+            <span class="sol-banner-texto">
+              La comunidad necesita {solicitudes.length} producto{solicitudes.length !== 1 ? 's' : ''} —
+              <strong>¿podés ayudar?</strong>
+            </span>
+            <svg class="sol-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="#92400E" stroke-width="2.5" stroke-linecap="round"
+              style="transform: rotate({solExpandido ? 180 : 0}deg); transition: transform 0.2s">
+              <polyline points="6 9 12 15 18 9"/>
+            </svg>
+          </button>
+
+          {#if solExpandido}
+            <div class="sol-lista-home">
+              <p class="sol-desc-home">
+                Tocá un producto para seleccionarlo, luego ir a Comercios y elegí dónde lo encontraste.
+              </p>
+              {#each solicitudes as sol}
+                <button
+                  class="sol-item-btn"
+                  class:seleccionado={solSeleccionado?.solicitudId === sol.id}
+                  on:click={() => seleccionarSolicitado({ nombre: sol.nombre, solicitudId: sol.id })}
+                >
+                  <span class="sol-nombre">{sol.nombre}</span>
+                  <div class="sol-item-right">
+                    <span class="sol-votos-chip">{sol.votos} {sol.votos === 1 ? 'pedido' : 'pedidos'}</span>
+                    {#if solSeleccionado?.solicitudId === sol.id}
+                      <span class="sol-check">✓</span>
+                    {/if}
+                  </div>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Aviso flotante producto seleccionado -->
+      {#if avisoProd && solSeleccionado}
+        <div class="aviso-prod-sel" role="status">
+          <span class="aviso-prod-texto"><strong>{solSeleccionado.nombre}</strong> seleccionado</span>
+          <span class="aviso-prod-sub">Ahora ir a Comercios y elegí dónde lo viste</span>
+          <button class="aviso-cancelar" on:click={cancelarSeleccionado}>✕</button>
+        </div>
+      {/if}
+
+      <!-- Mis Listas -->
+      <button class="mis-listas-btn" on:click={goMisListas}>
+        <div class="mls-icon">🛒</div>
+        <div class="mls-info">
+          <span class="mls-titulo">Mis Listas</span>
+          <span class="mls-sub">Organizá tu compra y encontrá los mejores precios</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-primary)" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
 
       <!-- Módulos completados -->
       {#each [
@@ -602,47 +687,22 @@
   }
   .info-card p { font-size: 13px; color: var(--c-text-mid); line-height: 1.55; }
 
-  /* ── Buscador de productos ─────────────────────────────────────────── */
+  /* ── Buscador de productos ─────────────────────────────────── */
   .busq-section { margin: 0; }
-
   .busq-input-wrap {
     display: flex; align-items: center; gap: 10px;
     background: var(--c-surface); border: 1.5px solid var(--c-border);
-    border-radius: var(--r-xl); padding: 12px 16px;
-    box-shadow: var(--s-xs);
-    transition: border-color 0.18s, box-shadow 0.18s;
+    border-radius: var(--r-xl); padding: 12px 16px; box-shadow: var(--s-xs);
   }
-  .busq-input-wrap:focus-within {
-    border-color: var(--c-primary);
-    box-shadow: 0 0 0 3px rgba(27,107,58,0.10), var(--s-sm);
-  }
-  .busq-icon { color: var(--c-text-light); flex-shrink: 0; }
-  .busq-input {
-    flex: 1; border: none; background: transparent;
-    font-family: var(--f-ui); font-size: 15px; color: var(--c-text);
-  }
+  .busq-input-wrap:focus-within { border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(27,107,58,0.10); }
+  .busq-icon  { color: var(--c-text-light); flex-shrink: 0; }
+  .busq-input { flex: 1; border: none; background: transparent; font-family: var(--f-ui); font-size: 15px; color: var(--c-text); }
   .busq-input::placeholder { color: var(--c-text-light); }
   .busq-input:focus { outline: none; }
-  .busq-clear {
-    background: none; border: none; color: var(--c-text-light);
-    font-size: 13px; cursor: pointer; padding: 2px 4px; flex-shrink: 0;
-  }
-  .busq-loading {
-    display: flex; align-items: center; gap: 10px;
-    padding: 14px 4px; font-size: 13px; color: var(--c-text-light);
-  }
-  .busq-resultados {
-    margin-top: 8px; background: var(--c-surface);
-    border-radius: var(--r-lg); border: 1px solid var(--c-border);
-    overflow: hidden; box-shadow: var(--s-sm);
-  }
-  .busq-item {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 14px; width: 100%; text-align: left;
-    background: none; border: none; border-bottom: 1px solid var(--c-border);
-    cursor: pointer; transition: background 0.15s;
-    -webkit-tap-highlight-color: transparent;
-  }
+  .busq-clear { background: none; border: none; color: var(--c-text-light); font-size: 13px; cursor: pointer; padding: 2px 4px; flex-shrink: 0; }
+  .busq-loading { display: flex; align-items: center; gap: 10px; padding: 14px 4px; font-size: 13px; color: var(--c-text-light); }
+  .busq-resultados { margin-top: 8px; background: var(--c-surface); border-radius: var(--r-lg); border: 1px solid var(--c-border); overflow: hidden; box-shadow: var(--s-sm); }
+  .busq-item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--c-border); cursor: pointer; transition: background 0.15s; -webkit-tap-highlight-color: transparent; }
   .busq-item:last-child { border-bottom: none; }
   .busq-item:active { background: var(--c-surface-2); }
   .busq-emoji { font-size: 18px; flex-shrink: 0; }
@@ -653,5 +713,55 @@
   .busq-unidad { font-size: 11px; color: var(--c-text-light); background: var(--c-surface-2); padding: 2px 7px; border-radius: var(--r-full); }
   .busq-empty  { padding: 14px 4px; font-size: 13px; color: var(--c-text-light); text-align: center; }
   .busq-empty strong { color: var(--c-text); }
+
+  /* ── Banner solicitudes en Home ─────────────────────────────── */
+  .sol-banner-home { background: #FFFBEB; border: 1.5px solid #F59E0B; border-radius: var(--r-xl); overflow: hidden; }
+  .sol-banner-header { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; background: none; border: none; cursor: pointer; font-family: var(--f-ui); text-align: left; -webkit-tap-highlight-color: transparent; }
+  .sol-banner-header:active { background: rgba(245,163,33,0.1); }
+  .sol-banner-texto { flex: 1; font-size: 13px; color: #92400E; }
+  .sol-banner-texto strong { color: #78350F; }
+  .sol-lista-home { padding: 0 12px 12px; }
+  .sol-desc-home  { font-size: 12px; color: #92400E; padding: 4px 0 10px; line-height: 1.5; }
+  .sol-item-btn {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 10px 10px; margin-bottom: 4px;
+    background: white; border: 1.5px solid rgba(245,163,33,0.3); border-radius: var(--r-md);
+    cursor: pointer; font-family: var(--f-ui); text-align: left; transition: all 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sol-item-btn:active { transform: scale(0.98); }
+  .sol-item-btn.seleccionado { border-color: var(--c-primary); background: rgba(27,107,58,0.06); }
+  .sol-nombre  { font-size: 14px; font-weight: 700; color: var(--c-text); }
+  .sol-item-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .sol-votos-chip { font-size: 11px; font-weight: 700; color: #92400E; background: rgba(245,163,33,0.2); padding: 2px 8px; border-radius: var(--r-full); }
+  .sol-check { font-size: 14px; color: var(--c-primary); font-weight: 700; }
+
+  /* Aviso flotante */
+  .aviso-prod-sel {
+    position: fixed; bottom: calc(var(--nav-h) + env(safe-area-inset-bottom,0px) + 12px);
+    left: 50%; transform: translateX(-50%);
+    width: calc(100% - 32px); max-width: 400px;
+    background: var(--c-primary); color: white; border-radius: var(--r-lg);
+    padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;
+    box-shadow: var(--s-lg); z-index: 150;
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+  .aviso-prod-texto { font-size: 14px; font-weight: 700; padding-right: 24px; }
+  .aviso-prod-sub   { font-size: 12px; opacity: 0.85; }
+  .aviso-cancelar   { position: absolute; top: 10px; right: 12px; background: none; border: none; color: white; font-size: 14px; cursor: pointer; opacity: 0.7; padding: 2px 4px; }
+
+  /* ── Botón Mis Listas ───────────────────────────────────────── */
+  .mis-listas-btn {
+    display: flex; align-items: center; gap: 14px; padding: 16px; width: 100%;
+    text-align: left; background: var(--c-surface); border: 1.5px solid var(--c-primary);
+    border-radius: var(--r-xl); cursor: pointer; transition: all 0.15s;
+    box-shadow: var(--s-xs); -webkit-tap-highlight-color: transparent;
+  }
+  .mis-listas-btn:active { transform: scale(0.98); background: rgba(27,107,58,0.04); }
+  .mls-icon  { font-size: 24px; width: 46px; height: 46px; background: rgba(27,107,58,0.1); border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .mls-info  { flex: 1; min-width: 0; text-align: left; }
+  .mls-titulo { display: block; font-size: 15px; font-weight: 700; color: var(--c-primary); }
+  .mls-sub    { display: block; font-size: 12px; color: var(--c-text-light); margin-top: 2px; line-height: 1.4; }
 
 </style>

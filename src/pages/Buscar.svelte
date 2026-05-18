@@ -9,6 +9,7 @@
   } from '../stores/comercios.js'
   import { obtenerPosicion, formatDistancia } from '../lib/geolocation.js'
   import BottomNav from '../components/BottomNav.svelte'
+  import { cargarSolicitudes } from '../stores/listas_compras.js'
 
   let busqueda   = ''
   let tipoFiltro = ''
@@ -18,9 +19,19 @@
   $: perfil = $userProfile
   $: lista  = filtrarComercios($comercios, { busqueda, tipo: tipoFiltro, posicion })
 
+  let solicitudes        = []
+  let mostrarSolicitudes = false
+
+  async function cargarSolicitudesLocalidad() {
+    const loc = $userProfile?.localidad
+    if (!loc) return
+    solicitudes = await cargarSolicitudes(loc)
+  }
+
   onMount(async () => {
     if (perfil?.localidad) {
       await cargarComerciosPorLocalidad(perfil.localidad)
+      cargarSolicitudesLocalidad()  // no bloqueante
     }
     // Intentar obtener GPS silenciosamente
     try {
@@ -207,6 +218,51 @@
     {/if}
 
   </main>
+
+  <!-- Banner de solicitudes de la comunidad — siempre visible si hay pendientes -->
+  {#if solicitudes.length > 0}
+    <div class="sol-banner" class:sol-expandido={mostrarSolicitudes}>
+
+      <button
+        class="sol-banner-header"
+        on:click={() => mostrarSolicitudes = !mostrarSolicitudes}
+        aria-expanded={mostrarSolicitudes}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/>
+        </svg>
+        <span class="sol-banner-texto">
+          La comunidad necesita {solicitudes.length} producto{solicitudes.length !== 1 ? 's' : ''} —
+          <strong>¿podés ayudar?</strong>
+        </span>
+        <svg
+          class="sol-chevron"
+          width="14" height="14" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+          style="transform: rotate({mostrarSolicitudes ? 180 : 0}deg)"
+        >
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+
+      {#if mostrarSolicitudes}
+        <div class="sol-lista">
+          <p class="sol-desc">
+            Encontraste alguno en un comercio? Cargá el precio desde ese comercio.
+          </p>
+          {#each solicitudes as sol}
+            <div class="sol-item">
+              <span class="sol-nombre">{sol.nombre}</span>
+              <span class="sol-votos-chip">
+                {sol.votos} {sol.votos === 1 ? 'pedido' : 'pedidos'}
+              </span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+    </div>
+  {/if}
 
   <BottomNav active="buscar" />
 </div>
@@ -467,4 +523,40 @@
   .empty-icon { font-size: 3rem; margin-bottom: 4px; }
   .empty-title { font-size: 1rem; font-weight: 700; color: var(--c-text); margin: 0; }
   .empty-desc  { font-size: 0.85rem; color: var(--c-text-muted); margin: 0 0 12px; max-width: 260px; }
+
+  /* ── Banner solicitudes comunidad ────────────────────────────────── */
+  .sol-banner {
+    background: #FFFBEB;
+    border-top: 2px solid #F59E0B;
+    border-bottom: 2px solid #F59E0B;
+  }
+  .sol-banner-header {
+    display: flex; align-items: center; gap: 10px;
+    width: 100%; padding: 11px 16px;
+    background: none; border: none; cursor: pointer;
+    font-family: var(--f-ui); text-align: left;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.15s;
+    color: #92400E;
+  }
+  .sol-banner-header:active { background: rgba(245,163,33,0.12); }
+  .sol-banner-header svg:first-child { flex-shrink: 0; color: #F59E0B; }
+  .sol-banner-texto {
+    flex: 1; font-size: 13px; color: #92400E;
+  }
+  .sol-banner-texto strong { color: #78350F; }
+  .sol-chevron { flex-shrink: 0; transition: transform 0.2s; }
+
+  .sol-lista { padding: 0 16px 12px; }
+  .sol-desc  { font-size: 12px; color: #92400E; padding: 4px 0 10px; line-height: 1.5; }
+  .sol-item  {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 0; border-top: 1px solid rgba(245,163,33,0.3);
+  }
+  .sol-nombre { font-size: 14px; font-weight: 700; color: var(--c-text); }
+  .sol-votos-chip {
+    font-size: 11px; font-weight: 700; color: #92400E;
+    background: rgba(245,163,33,0.2); padding: 2px 8px;
+    border-radius: var(--r-full); white-space: nowrap;
+  }
 </style>

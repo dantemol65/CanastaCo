@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   import { onMount, tick } from 'svelte'
 
   // Acción portal: mueve el nodo al body para escapar de cualquier overflow/transform
@@ -19,6 +19,9 @@
     freshness, freshnessLabel, formatPrecio, esPrecioVencido,
   } from '../stores/precios.js'
   import BottomNav from '../components/BottomNav.svelte'
+  import { get } from 'svelte/store'
+  import { productoSolicitadoSeleccionado } from '../stores/contexto.js'
+  import { marcarSolicitudCubierta, cargarSolicitudes } from '../stores/listas_compras.js'
   import EscanerCodigo from '../components/EscanerCodigo.svelte'
   import BotonVoz from '../components/BotonVoz.svelte'
 
@@ -34,6 +37,7 @@
   let mostrarForm    = false
   let mostrarEscaner = false
   let cacheInfo      = null   // texto de antigüedad del caché
+  let solicitudIdActual = null  // si se abrió desde una solicitud, guardar el id
   let paso           = 1      // 1: buscar producto  2: ingresar precio
 
   // Paso 1
@@ -102,6 +106,22 @@
     ])
     cacheInfo = preciosCacheInfo(comercioId)
     cargando = false
+
+    // Si viene un producto solicitado seleccionado desde Home → abrir form pre-cargado
+    const solicitado = get(productoSolicitadoSeleccionado)
+    if (solicitado) {
+      busquedaProd      = solicitado.nombre
+      solicitudIdActual = solicitado.solicitudId  // guardar para marcar cubierta al guardar
+      modoNuevo         = true
+      nuevaMarca        = ''
+      nuevaUnidad       = 'u'
+      nuevaCategoria    = 'otros'
+      mostrarForm       = true
+      paso              = 1
+      productoSolicitadoSeleccionado.set(null)
+      await tick()
+      if (inputBusqEl) inputBusqEl.focus()
+    }
   })
 
   // ── Helpers ───────────────────────────────────────────────────────────
@@ -267,6 +287,20 @@
       })
       showToast('✓ Precio guardado')
       cerrarForm()
+
+      // Si este precio cubre una solicitud pendiente → marcarla como cubierta
+      // y actualizar todas las listas de la localidad que tengan ese ítem pendiente
+      if (solicitudIdActual) {
+        marcarSolicitudCubierta(solicitudIdActual, {
+          id:        productoSel.id,
+          nombre:    productoSel.nombre,
+          marca:     productoSel.marca     || '',
+          unidad:    productoSel.unidad    || 'u',
+          categoria: productoSel.categoria || 'otros',
+          localidad: localidadId,
+        }).catch(() => {})
+        solicitudIdActual = null
+      }
     } catch (e) {
       showToast('Error: ' + e.message, 'err')
     } finally {
