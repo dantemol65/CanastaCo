@@ -34,6 +34,7 @@
   // Recargar solicitudes cada vez que Home se vuelve la página activa
   $: if ($currentPage === 'home') {
     cargarSolicitudesHome()
+    cargarNotificaciones()
   }
 
   $: displayName  = profile?.alias || user?.displayName?.split(' ')[0] || 'Usuario'
