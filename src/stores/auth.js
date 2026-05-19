@@ -2,8 +2,9 @@
 import { writable, get } from 'svelte/store'
 import { onAuthStateChanged, signOut as _signOut } from 'firebase/auth'
 import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
-import { auth, db, googleSignInPopup, googleSignInRedirect, getGoogleRedirectResult, emailSignIn } from '../lib/firebase.js'
+import { auth, db, googleSignInPopup, googleSignInRedirect, getGoogleRedirectResult } from '../lib/firebase.js'
 import { cachearFotoUrl, cargarFotoCacheada, limpiarFotoCache } from '../lib/fotocache.js'
+import { detenerListenerNotificaciones } from './notificaciones.js'
 
 const CACHE_KEY   = 'canastaco_profile'
 const PENDING_KEY = 'canastaco_pending_profile'
@@ -141,24 +142,8 @@ export async function signInWithGoogle() {
   }
 }
 
-export async function signInWithEmail(email, password) {
-  authError.set(null)
-  try {
-    const result = await emailSignIn(email, password)
-    await _handleAfterLogin(result.user)
-  } catch (err) {
-    const msgs = {
-      'auth/user-not-found':   'No existe una cuenta con ese email.',
-      'auth/wrong-password':   'Contraseña incorrecta.',
-      'auth/invalid-email':    'Email inválido.',
-      'auth/invalid-credential': 'Email o contraseña incorrectos.',
-      'auth/too-many-requests': 'Demasiados intentos. Esperá unos minutos.',
-    }
-    authError.set(msgs[err.code] || 'Error al ingresar: ' + err.message)
-  }
-}
-
 export async function signOut() {
+  detenerListenerNotificaciones()
   await _signOut(auth)
   currentUser.set(null)
   userProfile.set(null)

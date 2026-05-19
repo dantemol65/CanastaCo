@@ -2,7 +2,7 @@
 import { writable, get } from 'svelte/store'
 import {
   collection, doc, addDoc, updateDoc, getDocs,
-  query, where, orderBy, serverTimestamp, writeBatch
+  query, where, orderBy, serverTimestamp, writeBatch, onSnapshot
 } from 'firebase/firestore'
 import { db } from '../lib/firebase.js'
 import { currentUser } from './auth.js'
@@ -10,6 +10,9 @@ import { currentUser } from './auth.js'
 export const notificaciones     = writable([])
 export const totalNoLeidas      = writable(0)
 export const cargandoNotifs     = writable(false)
+
+// Listener en tiempo real — se activa con iniciarListenerNotificaciones()
+let _unsubscribeNotifs = null
 
 // ── Tipos de notificación ─────────────────────────────────────────────────
 
@@ -21,7 +24,6 @@ export const TIPOS_NOTIF = {
   reclamo_rechazado:    { icono: '❌', label: 'Reclamo rechazado' },
   intento_fallido:      { icono: '⚠️', label: 'Intentos fallidos de reclamo' },
   nuevo_usuario:        { icono: '👤', label: 'Nuevo usuario registrado' },
-  solicitud_cubierta:   { icono: '🛒', label: 'Pedido cubierto por la comunidad' },
 }
 
 // ── Cargar notificaciones del usuario ─────────────────────────────────────
@@ -30,28 +32,39 @@ export async function cargarNotificaciones() {
   const user = get(currentUser)
   if (!user) return
 
+  // Si ya hay un listener activo, no crear otro
+  if (_unsubscribeNotifs) return
+
   cargandoNotifs.set(true)
-  try {
-    // Query simple por destinatario — sin orderBy para evitar índice compuesto
-    const q = query(
-      collection(db, 'notificaciones'),
-      where('destinatario', '==', user.uid)
-    )
-    const snap = await getDocs(q)
+
+  const q = query(
+    collection(db, 'notificaciones'),
+    where('destinatario', '==', user.uid)
+  )
+
+  // onSnapshot: actualización en tiempo real
+  _unsubscribeNotifs = onSnapshot(q, (snap) => {
     const lista = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))
       .sort((a, b) => {
-        // Ordenar por fecha descendente del lado del cliente
         const ta = a.creadaEn?.toDate?.() || new Date(a.creadaEn || 0)
         const tb = b.creadaEn?.toDate?.() || new Date(b.creadaEn || 0)
         return tb - ta
       })
     notificaciones.set(lista)
     totalNoLeidas.set(lista.filter(n => !n.leida).length)
-  } catch (err) {
-    console.error('cargarNotificaciones:', err)
-  } finally {
     cargandoNotifs.set(false)
+  }, (err) => {
+    console.error('notificaciones listener:', err)
+    cargandoNotifs.set(false)
+  })
+}
+
+// Detener el listener (llamar al hacer signOut)
+export function detenerListenerNotificaciones() {
+  if (_unsubscribeNotifs) {
+    _unsubscribeNotifs()
+    _unsubscribeNotifs = null
   }
 }
 
