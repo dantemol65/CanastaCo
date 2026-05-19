@@ -34,7 +34,6 @@
   // Recargar solicitudes cada vez que Home se vuelve la página activa
   $: if ($currentPage === 'home') {
     cargarSolicitudesHome()
-    cargarNotificaciones()
   }
 
   $: displayName  = profile?.alias || user?.displayName?.split(' ')[0] || 'Usuario'
@@ -174,6 +173,15 @@
           {/if}
         </button>
       {/if}
+
+      <!-- Campanita de notificaciones para todos los usuarios -->
+      <button class="btn-notif" on:click={() => currentPage.set('notificaciones')} aria-label="Notificaciones">
+        🔔
+        {#if $totalNoLeidas > 0}
+          <span class="notif-badge">{$totalNoLeidas}</span>
+        {/if}
+      </button>
+
       <button class="avatar-btn" on:click={goToPerfil} aria-label="Mi perfil">
         {#if displayPhoto}
           <img src={displayPhoto} alt={displayName} class="avatar header-avatar" width="40" height="40" />
@@ -449,6 +457,23 @@
     align-items: center;
     justify-content: center;
   }
+  .btn-notif {
+    position: relative;
+    background: none; border: none;
+    font-size: 20px; cursor: pointer;
+    padding: 4px; line-height: 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .notif-badge {
+    position: absolute; top: -2px; right: -4px;
+    background: #DC2626; color: white;
+    font-size: 10px; font-weight: 800;
+    min-width: 16px; height: 16px;
+    border-radius: 8px; padding: 0 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--f-ui);
+  }
+
   .admin-notif-badge {
     position: absolute;
     top: -4px;

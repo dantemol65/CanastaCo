@@ -17,6 +17,7 @@
   import ListaTematica    from './pages/ListaTematica.svelte'
   import ComparadorPrecios from './pages/ComparadorPrecios.svelte'
   import PublicarLanding  from './pages/PublicarLanding.svelte'
+  import Notificaciones   from './pages/Notificaciones.svelte'
 
   onMount(() => { initAuth() })
 
@@ -75,6 +76,9 @@
 
 {:else if basePage === 'publicar'}
   <PublicarLanding />
+
+{:else if basePage === 'notificaciones'}
+  <Notificaciones />
 
 {:else if basePage === 'mis-listas'}
   <MisListas />
