@@ -1,0 +1,111 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ───────────────────────────────────────────────────────────
+    function esAuth()  { return request.auth != null; }
+    function esAdmin() { return esAuth() && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'admin'; }
+    function esUid(uid){ return esAuth() && request.auth.uid == uid; }
+
+    // ── Usuarios ──────────────────────────────────────────────────────────
+    match /usuarios/{uid} {
+      allow read:   if esAuth();
+      allow create: if esUid(uid);
+      allow update: if esUid(uid) || esAdmin();
+      allow delete: if false;
+    }
+
+    // ── Comercios ─────────────────────────────────────────────────────────
+    match /comercios/{id} {
+      allow read:   if true;
+      allow create: if esAuth();
+      allow update: if esAuth() && (
+        // El dueño reclamado puede actualizar
+        resource.data.reclamadoPor == request.auth.uid
+        // Cualquier usuario autenticado puede verificar (votar)
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['verificaciones', 'totalVerificaciones', 'estado', 'reputacion'])
+        // El admin puede hacer cualquier cambio
+        || esAdmin()
+      );
+      allow delete: if esAdmin();
+    }
+
+    // ── Notificaciones ────────────────────────────────────────────────────
+    match /notificaciones/{id} {
+      allow read:   if esAuth() && resource.data.destinatario == request.auth.uid;
+      allow create: if esAuth();
+      allow update: if esAuth() && resource.data.destinatario == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // ── Productos (catálogo por localidad) ────────────────────────────────
+    match /productos/{id} {
+      allow read:   if true;
+      allow create: if esAuth();
+      allow update: if esAuth();
+      allow delete: if esAdmin();
+    }
+
+    // ── Precios ───────────────────────────────────────────────────────────
+    match /precios/{id} {
+      allow read:   if true;
+      allow create: if esAuth();
+      allow update: if esAuth() && (
+        // El cargador puede editar su propio precio
+        resource.data.cargadoPor == request.auth.uid
+        // Cualquiera puede reportar o verificar (solo esos campos)
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['reportes', 'totalReportes', 'verificaciones',
+                      'totalVerificaciones', 'activo', 'desactivadoPorReportes'])
+        // El admin puede desactivar cualquier precio
+        || esAdmin()
+      );
+      allow delete: if false;
+    }
+
+    // ── Listas temáticas (dedicado/comercio) ──────────────────────────────
+    match /listas/{id} {
+      allow read:   if true;
+      allow create: if esAuth();
+      allow update: if esAuth() && resource.data.creadoPor == request.auth.uid;
+      allow delete: if esAuth() && resource.data.creadoPor == request.auth.uid;
+    }
+
+    // ── Listas de compras (usuario personal) ──────────────────────────────
+    match /listas_compras/{id} {
+      allow read:   if esAuth() && resource.data.usuarioId == request.auth.uid;
+      allow create: if esAuth() && request.resource.data.usuarioId == request.auth.uid;
+      allow update: if esAuth() && resource.data.usuarioId == request.auth.uid;
+      allow delete: if esAuth() && resource.data.usuarioId == request.auth.uid;
+    }
+
+    // ── Solicitudes de productos a la comunidad ───────────────────────────
+    match /solicitudes_productos/{id} {
+      // Cualquier usuario autenticado puede leer (para verlas en Buscar)
+      allow read:   if esAuth();
+      // Cualquier usuario puede crear una solicitud
+      allow create: if esAuth()
+        && request.resource.data.solicitadoPor == request.auth.uid;
+      // Cualquiera puede sumar voto (solo campos votos y votantes)
+      // o el admin puede marcarla como cubierta
+      allow update: if esAuth() && (
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['votos', 'votantes'])
+        || esAdmin()
+        || request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['estado', 'cubiertaEn'])
+      );
+      allow delete: if esAdmin();
+    }
+
+    // ── Sugerencias ───────────────────────────────────────────────────────────
+    match /sugerencias/{id} {
+      allow read:   if esAdmin();
+      allow create: if esAuth();
+      allow update: if esAdmin();
+      allow delete: if esAdmin();
+    }
+
+  }
+}

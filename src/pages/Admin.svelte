@@ -7,7 +7,7 @@
     TIPOS_NOTIF
   } from '../stores/notificaciones.js'
   import {
-    collection, getDocs, query, where, limit,
+    collection, getDocs, query, where, limit, orderBy,
     doc, updateDoc, serverTimestamp
   } from 'firebase/firestore'
   import { db } from '../lib/firebase.js'
@@ -36,6 +36,10 @@
   let busquedaUsuario  = ''
 
   let precios          = []
+
+  // ── Sugerencias ───────────────────────────────────────────────────────────
+  let sugerencias      = []
+  let filtroSugCat     = ''
 
   let comercioCredencial = null
   let generandoPDF       = false
@@ -176,7 +180,37 @@
     mostrarToast('Rol actualizado')
   }
 
+  async function cambiarEstado(uid, estadoActual) {
+    const estados = ['activo', 'suspendido', 'bloqueado']
+    const nuevo = prompt(`Estado actual: ${estadoActual || 'activo'}\nNuevo estado:\n${estados.join(' / ')}`)
+    if (!nuevo || !estados.includes(nuevo)) return
+    await updateDoc(doc(db, 'usuarios', uid), { estado: nuevo })
+    usuarios = usuarios.map(u => u.id === uid ? { ...u, estado: nuevo } : u)
+    mostrarToast(`Usuario ${nuevo}`)
+  }
+
   // ── Precios ───────────────────────────────────────────────────────────
+  async function cargarSugerencias() {
+    try {
+      const snap = await getDocs(query(
+        collection(db, 'sugerencias'),
+        orderBy('creadaEn', 'desc')
+      ))
+      sugerencias = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    } catch (e) { console.error(e) }
+  }
+
+  async function marcarSugerenciaLeida(id) {
+    await updateDoc(doc(db, 'sugerencias', id), { leida: true })
+    sugerencias = sugerencias.map(s => s.id === id ? { ...s, leida: true } : s)
+  }
+
+  $: sugerenciasFiltradas = filtroSugCat
+    ? sugerencias.filter(s => s.categoria === filtroSugCat)
+    : sugerencias
+
+  $: noLeidasSug = sugerencias.filter(s => !s.leida).length
+
   async function cargarPreciosAdmin() {
     cargando = true
     try {
@@ -292,6 +326,7 @@
       { id:'comercios',      label:'Comercios', icon:'🏪' },
       { id:'usuarios',       label:'Usuarios', icon:'👥' },
       { id:'precios',        label:'Precios', icon:'🏷️' },
+      { id:'sugerencias',    label:'Sugerencias', icon:'💡', badge: noLeidasSug },
       { id:'credencial',     label:'Credencial', icon:'📄' },
     ] as item}
       <button
@@ -467,9 +502,22 @@
                 {/if}
                 <span class="rol-chip rol-{u.rol || 'usuario'}">{u.rol || 'usuario'}</span>
               </div>
-              <button class="btn-rol" on:click={() => cambiarRol(u.id, u.rol || 'usuario')}>
-                Cambiar rol
-              </button>
+              <div class="user-btns">
+                <button class="btn-rol" on:click={() => cambiarRol(u.id, u.rol || 'usuario')}>
+                  Rol
+                </button>
+                <button
+                  class="btn-estado"
+                  class:estado-activo={!u.estado || u.estado === 'activo'}
+                  class:estado-suspendido={u.estado === 'suspendido'}
+                  class:estado-bloqueado={u.estado === 'bloqueado'}
+                  on:click={() => cambiarEstado(u.id, u.estado || 'activo')}
+                  title="Cambiar estado"
+                >
+                  {#if u.estado === 'suspendido'}⏸{:else if u.estado === 'bloqueado'}🚫{:else}✓{/if}
+                  {u.estado || 'activo'}
+                </button>
+              </div>
             </div>
           {/each}
         </div>
@@ -509,6 +557,60 @@
                   Desactivar
                 </button>
               </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+    {:else if seccion === 'sugerencias'}
+      <!-- Filtro por categoría -->
+      <div class="admin-filters" style="margin-bottom:12px">
+        {#each [
+          { v:'',              l:'Todas' },
+          { v:'general',       l:'General' },
+          { v:'funcionalidad', l:'Funcionalidad' },
+          { v:'error',         l:'Errores' },
+          { v:'contenido',     l:'Contenido' },
+          { v:'otro',          l:'Otro' },
+        ] as f}
+          <button
+            class="filter-chip"
+            class:active={filtroSugCat === f.v}
+            on:click={() => filtroSugCat = f.v}
+          >{f.l}</button>
+        {/each}
+      </div>
+
+      {#if cargando}
+        <div class="loading-msg">Cargando…</div>
+      {:else if sugerenciasFiltradas.length === 0}
+        <div class="empty-state"><div class="empty-icon">💡</div><p>Sin sugerencias</p></div>
+      {:else}
+        <p class="section-desc">
+          {sugerenciasFiltradas.length} sugerencia{sugerenciasFiltradas.length !== 1 ? 's' : ''}
+          {noLeidasSug > 0 ? `· ${noLeidasSug} sin leer` : ''}
+        </p>
+        <div class="items-lista">
+          {#each sugerenciasFiltradas as sug (sug.id)}
+            <div class="sug-card" class:sug-no-leida={!sug.leida}>
+              <div class="sug-top">
+                <div class="sug-meta">
+                  <span class="sug-alias">{sug.usuarioAlias || 'Anónimo'}</span>
+                  {#if sug.localidad}
+                    <span class="sug-loc">📍 {nombresLocalidad.get(sug.localidad) || sug.localidad}</span>
+                  {/if}
+                  <span class="sug-cat-chip">{sug.categoria || 'general'}</span>
+                </div>
+                <span class="sug-fecha">{formatFecha(sug.creadaEn)}</span>
+              </div>
+              <p class="sug-texto">{sug.texto}</p>
+              {#if !sug.leida}
+                <button class="btn-sug-leida" on:click={() => marcarSugerenciaLeida(sug.id)}>
+                  ✓ Marcar como leída
+                </button>
+              {:else}
+                <span class="sug-leida-chip">✓ Leída</span>
+              {/if}
             </div>
           {/each}
         </div>
@@ -893,6 +995,20 @@
   .estado-verificado { background: #D1FAE5; color: #065F46; }
   .estado-rechazado  { background: #FEE2E2; color: #991B1B; }
   .estado-pendiente  { background: #FEF3C7; color: #92400E; }
+
+  /* Botones usuario */
+  .user-btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .btn-estado {
+    padding: 6px 10px; border-radius: var(--r-full);
+    border: 1.5px solid var(--c-border); background: var(--c-surface);
+    font-size: 11px; font-weight: 700; cursor: pointer;
+    font-family: var(--f-ui); white-space: nowrap;
+    display: flex; align-items: center; gap: 4px;
+    transition: all 0.15s;
+  }
+  .btn-estado.estado-activo     { border-color: #059669; color: #059669; }
+  .btn-estado.estado-suspendido { border-color: #F59E0B; color: #92400E; background: #FFFBEB; }
+  .btn-estado.estado-bloqueado  { border-color: #DC2626; color: #DC2626; background: #FEF2F2; }
 
   /* Empty state */
   .empty-state {

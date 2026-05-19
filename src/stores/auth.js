@@ -14,6 +14,8 @@ export const currentUser    = writable(null)
 export const userProfile    = writable(null)
 export const authError      = writable(null)
 export const pendingSync    = writable(false)  // true si hay cambios sin sincronizar
+export const usuarioBloqueado   = writable(false)
+export const usuarioSuspendido  = writable(false)
 
 // ── Cache local ───────────────────────────────────────────────────────────
 
@@ -45,6 +47,27 @@ function loadPending() {
 }
 function clearPending() {
   try { localStorage.removeItem(PENDING_KEY) } catch {}
+}
+
+// ── Verificación de estado ───────────────────────────────────────────────
+
+function verificarEstadoUsuario(profile) {
+  const estado = profile?.estado || 'activo'
+  if (estado === 'bloqueado') {
+    usuarioBloqueado.set(true)
+    usuarioSuspendido.set(false)
+    currentPage.set('bloqueado')
+    return false
+  }
+  if (estado === 'suspendido') {
+    usuarioSuspendido.set(true)
+    usuarioBloqueado.set(false)
+    // Suspendido puede ver pero no actuar — se muestra aviso en Home
+    return true
+  }
+  usuarioBloqueado.set(false)
+  usuarioSuspendido.set(false)
+  return true
 }
 
 // ── Sincronización ────────────────────────────────────────────────────────
@@ -93,7 +116,7 @@ export async function initAuth() {
           userProfile.set(profile)
           saveProfileCache(profile)
           _updateLastAccess(user.uid)
-          currentPage.set('home')
+          if (verificarEstadoUsuario(profile)) currentPage.set('home')
         } else {
           // Puede haber perfil en caché (guardado offline)
           const cached = loadProfileCache()
@@ -164,6 +187,8 @@ export async function signOut() {
   await _signOut(auth)
   currentUser.set(null)
   userProfile.set(null)
+  usuarioBloqueado.set(false)
+  usuarioSuspendido.set(false)
   clearProfileCache()
   clearPending()
   limpiarFotoCache()
@@ -237,7 +262,7 @@ async function _handleAfterLogin(user) {
       userProfile.set(profile)
       saveProfileCache(profile)
       _updateLastAccess(user.uid)
-      currentPage.set('home')
+      if (verificarEstadoUsuario(profile)) currentPage.set('home')
     } else {
       currentPage.set('perfil')
     }

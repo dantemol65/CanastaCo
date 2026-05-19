@@ -8,7 +8,7 @@
       destroy() { node.isConnected && document.body.removeChild(node) }
     }
   }
-  import { currentPage, currentUser, userProfile } from '../stores/auth.js'
+  import { currentPage, currentUser, userProfile, usuarioSuspendido } from '../stores/auth.js'
   import { comercioActivo, cargarComercio } from '../stores/comercios.js'
   import {
     productos, preciosComercio, cargandoPrecios,
@@ -132,6 +132,7 @@
   }
 
   function abrirForm() {
+    if ($usuarioSuspendido) { showToast('Tu cuenta está suspendida — no podés cargar precios', 'err'); return }
     mostrarForm    = true
     paso           = 1
     busquedaProd   = ''

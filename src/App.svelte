@@ -18,6 +18,8 @@
   import ComparadorPrecios from './pages/ComparadorPrecios.svelte'
   import PublicarLanding  from './pages/PublicarLanding.svelte'
   import Notificaciones   from './pages/Notificaciones.svelte'
+  import Bloqueado        from './pages/Bloqueado.svelte'
+  import Sugerencias      from './pages/Sugerencias.svelte'
 
   onMount(() => { initAuth() })
 
@@ -79,6 +81,12 @@
 
 {:else if basePage === 'notificaciones'}
   <Notificaciones />
+
+{:else if basePage === 'bloqueado'}
+  <Bloqueado />
+
+{:else if basePage === 'sugerencias'}
+  <Sugerencias />
 
 {:else if basePage === 'mis-listas'}
   <MisListas />

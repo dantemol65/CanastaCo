@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte'
-  import { currentPage, userProfile } from '../stores/auth.js'
+  import { currentPage, userProfile, usuarioSuspendido } from '../stores/auth.js'
   import {
     listaActiva, cargarLista,
     agregarItem, quitarItem,
@@ -55,6 +55,7 @@
   })
 
   async function abrirBuscador() {
+    if ($usuarioSuspendido) { showToast('Tu cuenta está suspendida', 'err'); return }
     mostrarBusq = true
     if (!prodCargados && localidad) {
       await cargarProductos(localidad)
