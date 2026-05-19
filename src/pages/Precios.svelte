@@ -145,9 +145,14 @@
     esOferta       = false
     vencimiento    = ''
     if (inputBusqEl) inputBusqEl.placeholder = 'Leche, Tomate, Pan lactal…'
+    codigoBarrasActual = null
   }
 
-  function cerrarForm() { mostrarForm = false }
+  function cerrarForm() {
+    mostrarForm    = false
+    desdeEscaner   = false
+    codigoBarrasActual = null
+  }
 
   function abrirEscaner() { mostrarEscaner = true }
   function cerrarEscaner() { mostrarEscaner = false }
@@ -219,17 +224,21 @@
     // El componente ya muestra el error internamente
   }
 
-    function onCodigoSinProducto(e) {
+    let codigoBarrasActual = null  // código escaneado para asociar al nuevo producto
+  let desdeEscaner       = false // indica que el form se abrió desde escaneo sin nombre
+
+  function onCodigoSinProducto(e) {
     const { codigoBarras } = e.detail
+    codigoBarrasActual = codigoBarras
     mostrarEscaner = false
     busquedaProd   = ''
     nuevaMarca     = ''
     nuevaCategoria = 'otros'
     nuevaUnidad    = 'u'
     modoNuevo      = true
+    desdeEscaner   = true
     mostrarForm    = true
     paso           = 1
-    // Dar foco al input con hint del código
     tick().then(() => {
       if (inputBusqEl) {
         inputBusqEl.placeholder = `Código: ${codigoBarras} — escribí el nombre`
@@ -249,13 +258,16 @@
     if (!busquedaProd.trim()) return
     try {
       const p = await buscarOCrearProducto({
-        nombre:    busquedaProd,
-        marca:     nuevaMarca,
-        unidad:    nuevaUnidad,
-        categoria: nuevaCategoria,
-        localidad: localidadId,
+        nombre:       busquedaProd,
+        marca:        nuevaMarca,
+        unidad:       nuevaUnidad,
+        categoria:    nuevaCategoria,
+        localidad:    localidadId,
+        codigoBarras: codigoBarrasActual || null,
       })
-      productoSel = p
+      productoSel        = p
+      codigoBarrasActual = null  // limpiar después de usar
+      desdeEscaner      = false
       paso = 2
     } catch (e) {
       showToast('Error al crear producto: ' + e.message, 'err')
@@ -290,6 +302,7 @@
 
       // Si este precio cubre una solicitud pendiente → marcarla como cubierta
       // y actualizar todas las listas de la localidad que tengan ese ítem pendiente
+      console.log('[guardarPrecio] solicitudIdActual:', solicitudIdActual, '| localidadId:', localidadId)
       if (solicitudIdActual) {
         marcarSolicitudCubierta(solicitudIdActual, {
           id:        productoSel.id,
@@ -753,7 +766,7 @@
           {/if}
 
           <!-- Producto no encontrado → crear nuevo -->
-          {#if modoNuevo && busquedaProd.length >= 2}
+          {#if modoNuevo && (busquedaProd.length >= 2 || desdeEscaner)}
             <div class="nuevo-producto-form">
               <div class="nuevo-header">
                 <span class="nuevo-icon">✨</span>
@@ -943,6 +956,7 @@
 
 {#if mostrarEscaner}
   <EscanerCodigo
+    catalogoLocal={$productos}
     on:encontrado={onProductoEscaneado}
     on:noEncontrado={onCodigoSinProducto}
     on:cancelar={cerrarEscaner}

@@ -147,17 +147,39 @@ export async function cargarProductos(localidadId) {
  * Busca un producto por nombre normalizado en la lista ya cargada.
  * Si no existe, lo crea en Firestore y lo agrega al store.
  */
-export async function buscarOCrearProducto({ nombre, marca, unidad, categoria, localidad }) {
+export async function buscarOCrearProducto({ nombre, marca, unidad, categoria, localidad, codigoBarras = null }) {
   const user = get(currentUser)
   if (!user) throw new Error('No autenticado')
 
   const nombreNorm = nombre.trim().toLowerCase()
 
-  // Buscar en store local primero
+  // 1. Buscar en store local por nombre
   const local = get(productos).find(p => p.nombreNorm === nombreNorm)
-  if (local) return local
+  if (local) {
+    // Si tiene código de barras nuevo, actualizarlo
+    if (codigoBarras && !local.codigoBarras) {
+      updateDoc(doc(db, 'productos', local.id), { codigoBarras }).catch(() => {})
+      productos.update(l => l.map(p => p.id === local.id ? { ...p, codigoBarras } : p))
+    }
+    return local
+  }
 
-  // Buscar en Firestore
+  // 2. Buscar en Firestore por código de barras primero (más preciso)
+  if (codigoBarras) {
+    const qCod = query(
+      collection(db, 'productos'),
+      where('localidad',    '==', localidad),
+      where('codigoBarras', '==', codigoBarras)
+    )
+    const snapCod = await getDocs(qCod)
+    if (!snapCod.empty) {
+      const found = { id: snapCod.docs[0].id, ...snapCod.docs[0].data() }
+      productos.update(l => [...l, found])
+      return found
+    }
+  }
+
+  // 3. Buscar en Firestore por nombreNorm
   const q = query(
     collection(db, 'productos'),
     where('localidad', '==', localidad),
@@ -166,11 +188,16 @@ export async function buscarOCrearProducto({ nombre, marca, unidad, categoria, l
   const snap = await getDocs(q)
   if (!snap.empty) {
     const found = { id: snap.docs[0].id, ...snap.docs[0].data() }
+    // Aprovechar para guardar el código de barras si no lo tenía
+    if (codigoBarras && !found.codigoBarras) {
+      updateDoc(doc(db, 'productos', found.id), { codigoBarras }).catch(() => {})
+      found.codigoBarras = codigoBarras
+    }
     productos.update(l => [...l, found])
     return found
   }
 
-  // Crear nuevo
+  // 4. Crear nuevo
   const nuevo = {
     nombre:       nombre.trim(),
     nombreNorm,
@@ -178,6 +205,7 @@ export async function buscarOCrearProducto({ nombre, marca, unidad, categoria, l
     unidad:       unidad || 'u',
     categoria:    categoria || 'otros',
     localidad,
+    codigoBarras: codigoBarras || null,
     creadoPor:    user.uid,
     creadoEn:     serverTimestamp(),
     totalPrecios: 0,

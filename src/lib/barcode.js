@@ -269,8 +269,25 @@ async function buscarOPF(codigo) {
  * @param {string} codigo
  * @param {((entrada: string) => void) | null} onLog  — callback para log en tiempo real (solo DEV)
  */
-export async function buscarEnOFF(codigo, onLog = null) {
+export async function buscarEnOFF(codigo, onLog = null, catalogoLocal = []) {
   // Nombre de la función mantenido por compatibilidad con EscanerCodigo.svelte
+
+  // 0. Buscar primero en el catálogo local (ya cargado en memoria)
+  //    Si alguien ya registró este código en la localidad, lo encontramos al instante
+  const enCatalogo = catalogoLocal.find(p => p.codigoBarras === codigo)
+  if (enCatalogo) {
+    onLog?.(`✅ Catálogo local → "${enCatalogo.nombre}" (0ms)`)
+    return {
+      codigoBarras: codigo,
+      nombre:       enCatalogo.nombre,
+      marca:        enCatalogo.marca        || '',
+      categoria:    enCatalogo.categoria    || 'otros',
+      unidad:       enCatalogo.unidad       || 'u',
+      imagen:       null,
+      fuente:       'Catálogo local',
+    }
+  }
+
   const DEV = import.meta.env.DEV
   const log = []
 

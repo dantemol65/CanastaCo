@@ -16,6 +16,8 @@
   //   on:cancelar
   const dispatch = createEventDispatcher()
 
+  export let catalogoLocal = []  // catálogo en memoria para búsqueda sin red
+
   let estado = 'iniciando'  // 'iniciando' | 'escaneando' | 'buscando' | 'encontrado' | 'noEncontrado' | 'error'
   let mensajeError = ''
   let stream       = null
@@ -33,22 +35,14 @@
   const MOSTRAR_LOG = true
   let devLog        = []
 
-  // FIX BUG 2: reasignar stream al video cada vez que Svelte recrea el elemento
-  $: if (videoEl && stream) {
-    if (videoEl.srcObject !== stream) {
-      videoEl.srcObject = stream
-      videoEl.play().catch(() => {})
-    }
-  }
+  // stream se asigna en onMount y en reescanear()
 
   onMount(async () => {
     try {
-      stream  = await abrirCamara()
+      stream    = await abrirCamara()
       usaNativo = soportaBarcodeDetector()
-      if (usaNativo) {
-        detector = await crearDetectorNativo()
-      }
-      // Asignar stream al video
+      if (usaNativo) detector = await crearDetectorNativo()
+
       if (videoEl) {
         videoEl.srcObject = stream
         await videoEl.play()
@@ -80,6 +74,7 @@
     clearTimeout(loopId)
     loopId = null
   }
+
 
   async function loopNativo(session) {
     // Verificar que esta sesión sigue vigente antes de cada iteración
@@ -132,7 +127,7 @@
 
     const resultado = await buscarEnOFF(codigo, (entrada) => {
       if (MOSTRAR_LOG) devLog = [...devLog, entrada]
-    })
+    }, catalogoLocal)
 
     // Verificar sesión DESPUÉS del await (puede haber cambiado durante la llamada a la API)
     if (session !== scanSession) return
