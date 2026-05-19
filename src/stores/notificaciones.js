@@ -21,6 +21,7 @@ export const TIPOS_NOTIF = {
   reclamo_rechazado:    { icono: '❌', label: 'Reclamo rechazado' },
   intento_fallido:      { icono: '⚠️', label: 'Intentos fallidos de reclamo' },
   nuevo_usuario:        { icono: '👤', label: 'Nuevo usuario registrado' },
+  solicitud_cubierta:   { icono: '🛒', label: 'Pedido cubierto por la comunidad' },
 }
 
 // ── Cargar notificaciones del usuario ─────────────────────────────────────
