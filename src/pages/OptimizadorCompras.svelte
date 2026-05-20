@@ -39,23 +39,31 @@
   }
 
   // Totales del caso 1 con cantidades
-  $: topComerciosConCant = topComercios.map(com => {
-    const total = com.detalle.reduce((s, i) => s + i.precio * cant(i.productoId), 0)
-    return { ...com, totalConCant: total }
-  })
+  // Referenciamos cantidades directamente para que Svelte rastree la dependencia
+  $: topComerciosConCant = (() => {
+    const _c = cantidades  // fuerza rastreo de la variable
+    return topComercios.map(com => {
+      const total = com.detalle.reduce((s, i) => s + i.precio * (_c[i.productoId] ?? 1), 0)
+      return { ...com, totalConCant: total }
+    })
+  })()
 
   // Totales del caso 2 con cantidades
-  $: repartidoConCant = repartido ? {
-    ...repartido,
-    sublistas: repartido.sublistas.map(sub => ({
-      ...sub,
-      totalConCant: sub.items.reduce((s, i) => s + i.precio * cant(i.productoId), 0),
-      items: sub.items.map(i => ({ ...i, cantConCant: cant(i.productoId) }))
-    })),
-    totalRepartidoConCant: repartido.sublistas.reduce((s, sub) =>
-      s + sub.items.reduce((ss, i) => ss + i.precio * cant(i.productoId), 0), 0
-    ),
-  } : null
+  $: repartidoConCant = (() => {
+    const _c = cantidades  // fuerza rastreo
+    if (!repartido) return null
+    return {
+      ...repartido,
+      sublistas: repartido.sublistas.map(sub => ({
+        ...sub,
+        totalConCant: sub.items.reduce((s, i) => s + i.precio * (_c[i.productoId] ?? 1), 0),
+        items: sub.items.map(i => ({ ...i }))
+      })),
+      totalRepartidoConCant: repartido.sublistas.reduce((s, sub) =>
+        s + sub.items.reduce((ss, i) => ss + i.precio * (_c[i.productoId] ?? 1), 0), 0
+      ),
+    }
+  })()
 
   onMount(async () => {
     try {
@@ -106,6 +114,7 @@
 
   function generarTextoCompartir() {
     const lineas = [`📋 ${lista?.nombre || 'Lista de compras'}\n`]
+    const _c = cantidades
 
     if (tab === 'uno' && topComerciosConCant.length > 0) {
       const com = topComerciosConCant[0]
@@ -113,7 +122,7 @@
       if (com.comercioDireccion) lineas.push(`📍 ${com.comercioDireccion}`)
       lineas.push(`Total: ${formatPrecioLista(com.totalConCant)}\n`)
       com.detalle.forEach(i => {
-        const c = cant(i.productoId)
+        const c = _c[i.productoId] ?? 1
         lineas.push(`• ${i.productoNombre}${c > 1 ? ` ×${c}` : ''} — ${formatPrecioLista(i.precio * c)}`)
       })
       if (com.faltantes.length) lineas.push(`\n⚠ Sin precio: ${com.faltantes.join(', ')}`)
@@ -123,7 +132,7 @@
         if (sub.comercioDireccion) lineas.push(`   ${sub.comercioDireccion}`)
         lineas.push(`Subtotal: ${formatPrecioLista(sub.totalConCant)}`)
         sub.items.forEach(i => {
-          const c = cant(i.productoId)
+          const c = _c[i.productoId] ?? 1
           lineas.push(`• ${i.productoNombre}${c > 1 ? ` ×${c}` : ''} — ${formatPrecioLista(i.precio * c)}`)
         })
       })
@@ -286,12 +295,12 @@
                       <input
                         type="number" min="1" max="99"
                         class="cant-input"
-                        value={cant(item.productoId)}
-                        on:change={e => setCant(item.productoId, e.target.value)}
+                        value={cantidades[item.productoId] ?? 1}
+                        on:input={e => setCant(item.productoId, e.target.value)}
                       />
                       <button class="cant-btn" on:click={() => setCant(item.productoId, cant(item.productoId) + 1)}>+</button>
                     </div>
-                    <span class="detalle-precio">{formatPrecioLista(item.precio * cant(item.productoId))}</span>
+                    <span class="detalle-precio">{formatPrecioLista(item.precio * (cantidades[item.productoId] ?? 1))}</span>
                   </div>
                 {/each}
 
@@ -313,14 +322,32 @@
           <div class="empty-state"><div class="empty-icon">🔍</div><p class="empty-title">Sin datos suficientes</p></div>
         {:else}
 
-          {#if repartidoConCant.ahorro > 0}
+          {#if repartidoConCant.totalRepartidoConCant > 0}
+            {@const mejorUnico = topComerciosConCant[0]?.totalConCant || 0}
+            {@const ahorroVsMejor = mejorUnico > repartidoConCant.totalRepartidoConCant
+              ? mejorUnico - repartidoConCant.totalRepartidoConCant : 0}
+
             <div class="ahorro-banner">
               <div class="ahorro-icon">💰</div>
               <div class="ahorro-text">
-                <span class="ahorro-label">Ahorro estimado repartiendo</span>
-                <span class="ahorro-valor">{formatPrecioLista(repartidoConCant.ahorro)}</span>
+                <span class="ahorro-label">Total repartido</span>
+                <span class="ahorro-valor">{formatPrecioLista(repartidoConCant.totalRepartidoConCant)}</span>
+
+                {#if ahorroVsMejor > 0}
+                  <span class="ahorro-vs">
+                    vs {topComerciosConCant[0]?.comercioNombre || 'mejor comercio'}:
+                    <strong>ahorrás {formatPrecioLista(ahorroVsMejor)}</strong>
+                    ({pctAhorro(repartidoConCant.totalRepartidoConCant, mejorUnico)})
+                  </span>
+                {:else if mejorUnico > 0}
+                  <span class="ahorro-vs sin-ahorro">
+                    Similar al mejor comercio único — conviene una sola parada
+                  </span>
+                {/if}
               </div>
-              <span class="ahorro-pct">{pctAhorro(repartidoConCant.totalRepartidoConCant, repartidoConCant.totalSinRepartir)}</span>
+              {#if ahorroVsMejor > 0}
+                <span class="ahorro-pct">{pctAhorro(repartidoConCant.totalRepartidoConCant, mejorUnico)}</span>
+              {/if}
             </div>
           {/if}
 
@@ -358,12 +385,12 @@
                       <input
                         type="number" min="1" max="99"
                         class="cant-input"
-                        value={cant(item.productoId)}
-                        on:change={e => setCant(item.productoId, e.target.value)}
+                        value={cantidades[item.productoId] ?? 1}
+                        on:input={e => setCant(item.productoId, e.target.value)}
                       />
                       <button class="cant-btn" on:click={() => setCant(item.productoId, cant(item.productoId) + 1)}>+</button>
                     </div>
-                    <span class="sub-precio">{formatPrecioLista(item.precio * cant(item.productoId))}</span>
+                    <span class="sub-precio">{formatPrecioLista(item.precio * (cantidades[item.productoId] ?? 1))}</span>
                   </div>
                 {/each}
               </div>
@@ -519,6 +546,9 @@
   .ahorro-label { display: block; font-size: 11px; font-weight: 700; color: var(--c-primary); text-transform: uppercase; letter-spacing: 0.06em; }
   .ahorro-valor { display: block; font-family: var(--f-brand); font-size: 22px; font-weight: 700; color: var(--c-primary); }
   .ahorro-pct   { font-size: 16px; font-weight: 700; color: #059669; flex-shrink: 0; }
+  .ahorro-vs    { display: block; font-size: 12px; color: var(--c-text-light); margin-top: 4px; line-height: 1.4; }
+  .ahorro-vs strong { color: #059669; }
+  .ahorro-vs.sin-ahorro { color: #92400E; }
 
   /* Sublistas */
   .sublista-card { background: var(--c-surface); border-radius: var(--r-xl); border: 1px solid var(--c-border); overflow: hidden; margin-bottom: 12px; box-shadow: var(--s-xs); }
