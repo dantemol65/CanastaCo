@@ -283,7 +283,7 @@ export async function cargarPreciosProducto(productoId, localidadId) {
  * @param {Object} params
  */
 export async function registrarPrecio({
-  comercioId, comercioNombre, localidad,
+  comercioId, comercioNombre, comercioDireccion = '', localidad,
   productoId, productoNombre, productoUnidad, productoCategoria,
   precio, esOferta = false, vencimiento = null, listaId = null
 }) {
@@ -314,6 +314,7 @@ export async function registrarPrecio({
   const nuevo = {
     comercioId,
     comercioNombre,
+    comercioDireccion: comercioDireccion || '',
     localidad,
     productoId,
     productoNombre,

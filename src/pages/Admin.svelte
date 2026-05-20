@@ -40,6 +40,7 @@
   // ── Sugerencias ───────────────────────────────────────────────────────────
   let sugerencias      = []
   let filtroSugCat     = ''
+  let filtroSugLeida   = 'todas'  // 'todas' | 'no_leidas' | 'leidas'
 
   let comercioCredencial = null
   let generandoPDF       = false
@@ -50,6 +51,65 @@
   $: comerciosFiltrados = comercios
     .filter(c => filtroEstado === 'todos' || c.estado === filtroEstado)
     .sort((a, b) => (b.creadoEn?.toDate?.() || 0) - (a.creadoEn?.toDate?.() || 0))
+
+  // Map uid → alias para mostrar quién reclamó cada comercio
+  $: aliasMap = new Map(usuarios.map(u => [u.id, u.alias || u.email || u.id]))
+
+  function aliasReclamador(uid) {
+    if (!uid) return null
+    return aliasMap.get(uid) || uid
+  }
+
+  // ── Sheet de usuario ──────────────────────────────────────────────────────
+  let usuarioSheet     = null   // usuario seleccionado para ver en el sheet
+  let sheetCambiando   = false
+
+  function abrirSheetUsuario(uid) {
+    if (!uid) return
+    // Buscar en el array ya cargado
+    const u = usuarios.find(u => u.id === uid)
+    if (u) { usuarioSheet = u; return }
+    // Si no está (ej: viene de comercios y no cargamos ese uid), buscarlo en Firestore
+    import('firebase/firestore').then(({ getDoc, doc }) => {
+      getDoc(doc(db, 'usuarios', uid)).then(snap => {
+        if (snap.exists()) usuarioSheet = { id: snap.id, ...snap.data() }
+      })
+    })
+  }
+
+  function cerrarSheetUsuario() { usuarioSheet = null }
+
+  async function sheetCambiarRol() {
+    if (!usuarioSheet) return
+    const roles = ['usuario', 'dedicado', 'comercio', 'admin']
+    const nuevoRol = prompt(`Rol actual: ${usuarioSheet.rol || 'usuario'}\nNuevo rol:\n${roles.join(' / ')}`)
+    if (!nuevoRol || !roles.includes(nuevoRol)) return
+    sheetCambiando = true
+    await updateDoc(doc(db, 'usuarios', usuarioSheet.id), { rol: nuevoRol })
+    usuarioSheet = { ...usuarioSheet, rol: nuevoRol }
+    usuarios = usuarios.map(u => u.id === usuarioSheet.id ? { ...u, rol: nuevoRol } : u)
+    mostrarToast('Rol actualizado')
+    sheetCambiando = false
+  }
+
+  async function sheetCambiarEstado() {
+    if (!usuarioSheet) return
+    const estados = ['activo', 'suspendido', 'bloqueado']
+    const nuevo = prompt(`Estado actual: ${usuarioSheet.estado || 'activo'}\nNuevo estado:\n${estados.join(' / ')}`)
+    if (!nuevo || !estados.includes(nuevo)) return
+    sheetCambiando = true
+    await updateDoc(doc(db, 'usuarios', usuarioSheet.id), { estado: nuevo })
+    usuarioSheet = { ...usuarioSheet, estado: nuevo }
+    usuarios = usuarios.map(u => u.id === usuarioSheet.id ? { ...u, estado: nuevo } : u)
+    mostrarToast(`Usuario ${nuevo}`)
+    sheetCambiando = false
+  }
+
+  function formatFechaSheet(ts) {
+    if (!ts) return '—'
+    const d = ts.toDate ? ts.toDate() : new Date(ts)
+    return d.toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' })
+  }
 
   $: usuariosFiltrados = usuarios
     .filter(u => !filtroRol || (u.rol || 'usuario') === filtroRol)
@@ -108,15 +168,18 @@
     seccion  = s
     cargando = true
     try {
-      if (s === 'comercios') await cargarComerciosAdmin()
-      if (s === 'usuarios')  await cargarUsuarios()
-      if (s === 'precios')   await cargarPreciosAdmin()
+      if (s === 'comercios')   await cargarComerciosAdmin()
+      if (s === 'usuarios')    await cargarUsuarios()
+      if (s === 'precios')     await cargarPreciosAdmin()
+      if (s === 'sugerencias') await cargarSugerencias()
     } finally { cargando = false }
   }
 
   // ── Comercios ─────────────────────────────────────────────────────────
   async function cargarComerciosAdmin() {
     if (!navigator.onLine) { comercios = []; return }
+    // Si usuarios aún no cargó, cargarlo primero para poder resolver alias
+    if (!usuarios.length) await cargarUsuarios()
     try {
       const snap = await getDocs(query(collection(db, 'comercios')))
       let lista  = snap.docs.map(d => ({ id: d.id, ...d.data() }))
@@ -192,12 +255,19 @@
   // ── Precios ───────────────────────────────────────────────────────────
   async function cargarSugerencias() {
     try {
-      const snap = await getDocs(query(
-        collection(db, 'sugerencias'),
-        orderBy('creadaEn', 'desc')
-      ))
-      sugerencias = snap.docs.map(d => ({ id: d.id, ...d.data() }))
-    } catch (e) { console.error(e) }
+      // Sin orderBy para evitar requerir índice — ordenamos del lado del cliente
+      const snap = await getDocs(collection(db, 'sugerencias'))
+      sugerencias = snap.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => {
+          const ta = a.creadaEn?.toDate?.() || new Date(a.creadaEn || 0)
+          const tb = b.creadaEn?.toDate?.() || new Date(b.creadaEn || 0)
+          return tb - ta
+        })
+      console.log('[Admin] sugerencias cargadas:', sugerencias.length)
+    } catch (e) {
+      console.error('[Admin] cargarSugerencias error:', e)
+    }
   }
 
   async function marcarSugerenciaLeida(id) {
@@ -205,9 +275,12 @@
     sugerencias = sugerencias.map(s => s.id === id ? { ...s, leida: true } : s)
   }
 
-  $: sugerenciasFiltradas = filtroSugCat
-    ? sugerencias.filter(s => s.categoria === filtroSugCat)
-    : sugerencias
+  $: sugerenciasFiltradas = sugerencias
+    .filter(s => !filtroSugCat     || s.categoria === filtroSugCat)
+    .filter(s => filtroSugLeida === 'todas'
+      ? true
+      : filtroSugLeida === 'no_leidas' ? !s.leida : s.leida
+    )
 
   $: noLeidasSug = sugerencias.filter(s => !s.leida).length
 
@@ -433,6 +506,11 @@
                     📍 {formatLocalidadProvincia(c.localidad, c.provincia, nombresLocalidad)}
                   </p>
                 {/if}
+                {#if c.reclamadoPor}
+                  <button class="reclamador-btn" on:click={() => abrirSheetUsuario(c.reclamadoPor)}>
+                    👤 {aliasReclamador(c.reclamadoPor)}
+                  </button>
+                {/if}
                 {#if c.creadoEn}<p class="item-fecha">{formatFecha(c.creadoEn)}</p>{/if}
                 {#if c.reclamoBloqueado}
                   <button class="btn-desbloquear" on:click={() => desbloquearComercio(c.id, c.nombre)}>
@@ -563,6 +641,21 @@
       {/if}
 
     {:else if seccion === 'sugerencias'}
+      <!-- Filtro leídas/no leídas -->
+      <div class="admin-filters" style="margin-bottom:8px">
+        {#each [
+          { v:'todas',     l:'Todas' },
+          { v:'no_leidas', l:`No leídas${noLeidasSug > 0 ? ` (${noLeidasSug})` : ''}` },
+          { v:'leidas',    l:'Leídas' },
+        ] as f}
+          <button
+            class="filter-chip"
+            class:active={filtroSugLeida === f.v}
+            on:click={() => filtroSugLeida = f.v}
+          >{f.l}</button>
+        {/each}
+      </div>
+
       <!-- Filtro por categoría -->
       <div class="admin-filters" style="margin-bottom:12px">
         {#each [
@@ -675,6 +768,86 @@
     {/if}
 
   </main>
+  <!-- ── Sheet de usuario ────────────────────────────────────────────── -->
+  {#if usuarioSheet}
+    <div class="sheet-overlay" on:click={cerrarSheetUsuario} role="presentation"></div>
+    <div class="bottom-sheet user-sheet" role="dialog" aria-label="Datos del usuario">
+
+      <div class="sheet-handle-wrap">
+        <div class="sheet-handle"></div>
+      </div>
+
+      <!-- Header con avatar -->
+      <div class="user-sheet-header">
+        <div class="user-sheet-avatar">
+          {#if usuarioSheet.foto}
+            <img src={usuarioSheet.foto} alt={usuarioSheet.alias} class="avatar-img" />
+          {:else}
+            <div class="avatar-fallback-lg">
+              {(usuarioSheet.alias || usuarioSheet.email || '?').charAt(0).toUpperCase()}
+            </div>
+          {/if}
+        </div>
+        <div class="user-sheet-info">
+          <p class="user-sheet-alias">{usuarioSheet.alias || '(sin alias)'}</p>
+          <p class="user-sheet-email">{usuarioSheet.email || '—'}</p>
+        </div>
+        <button class="sheet-cerrar-btn" on:click={cerrarSheetUsuario}>✕</button>
+      </div>
+
+      <!-- Datos -->
+      <div class="user-sheet-datos">
+        <div class="dato-row">
+          <span class="dato-label">Rol</span>
+          <span class="rol-chip rol-{usuarioSheet.rol || 'usuario'}">{usuarioSheet.rol || 'usuario'}</span>
+        </div>
+        <div class="dato-row">
+          <span class="dato-label">Estado</span>
+          <span class="estado-chip estado-{usuarioSheet.estado || 'activo'}">{usuarioSheet.estado || 'activo'}</span>
+        </div>
+        <div class="dato-row">
+          <span class="dato-label">Localidad</span>
+          <span class="dato-valor">
+            {formatLocalidadProvincia(usuarioSheet.localidad, usuarioSheet.provincia, nombresLocalidad)}
+          </span>
+        </div>
+        <div class="dato-row">
+          <span class="dato-label">Reputación</span>
+          <span class="dato-valor">⭐ {usuarioSheet.reputacion ?? 0}</span>
+        </div>
+        <div class="dato-row">
+          <span class="dato-label">Registrado</span>
+          <span class="dato-valor">{formatFechaSheet(usuarioSheet.creadoEn)}</span>
+        </div>
+        <div class="dato-row">
+          <span class="dato-label">Último acceso</span>
+          <span class="dato-valor">{formatFechaSheet(usuarioSheet.ultimoAcceso)}</span>
+        </div>
+      </div>
+
+      <!-- Acciones -->
+      <div class="user-sheet-acciones">
+        <button class="btn-sheet-accion" on:click={sheetCambiarRol} disabled={sheetCambiando}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+          </svg>
+          Cambiar rol
+        </button>
+        <button class="btn-sheet-accion btn-sheet-estado" on:click={sheetCambiarEstado} disabled={sheetCambiando}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="12"/>
+            <line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          Cambiar estado
+        </button>
+      </div>
+
+    </div>
+  {/if}
+
 </div>
 
 <style>
@@ -988,6 +1161,11 @@
     color: var(--c-text-light) !important;
     font-size: 0.7rem !important;
   }
+  .reclamador-sub {
+    font-size: 0.72rem !important;
+    color: var(--c-primary) !important;
+    font-weight: 600 !important;
+  }
   .estado-chip {
     font-size: 0.7rem; font-weight: 700; padding: 3px 8px;
     border-radius: 99px; white-space: nowrap;
@@ -1044,4 +1222,70 @@
     from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
+
+  /* Sheet de usuario */
+  .sheet-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200;
+  }
+  .bottom-sheet {
+    position: fixed; bottom: 0; left: 50%;
+    transform: translateX(-50%);
+    width: min(480px, 100vw);
+    background: var(--c-surface); border-radius: var(--r-xl) var(--r-xl) 0 0;
+    z-index: 201; box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+    max-height: 85dvh; overflow-y: auto;
+  }
+  .sheet-handle-wrap { display: flex; justify-content: center; padding: 10px 0 0; }
+  .sheet-handle { width: 40px; height: 4px; background: var(--c-border); border-radius: 2px; }
+  .user-sheet-header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 20px; border-bottom: 1px solid var(--c-border);
+  }
+  .user-sheet-avatar { flex-shrink: 0; }
+  .avatar-img { width: 52px; height: 52px; border-radius: 50%; object-fit: cover; }
+  .avatar-fallback-lg {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--c-primary); color: white;
+    font-size: 22px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .user-sheet-info { flex: 1; min-width: 0; }
+  .user-sheet-alias { font-size: 16px; font-weight: 700; color: var(--c-text); }
+  .user-sheet-email { font-size: 12px; color: var(--c-text-light); margin-top: 2px; }
+  .sheet-cerrar-btn {
+    background: var(--c-surface-2); border: none; border-radius: 50%;
+    width: 30px; height: 30px; font-size: 13px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--c-text-light); flex-shrink: 0;
+  }
+  .user-sheet-datos { padding: 12px 20px; }
+  .dato-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid var(--c-border); font-size: 13px;
+  }
+  .dato-row:last-child { border-bottom: none; }
+  .dato-label { color: var(--c-text-light); font-weight: 600; }
+  .dato-valor { color: var(--c-text); font-weight: 600; }
+  .user-sheet-acciones {
+    display: flex; gap: 10px; padding: 12px 20px 24px;
+    border-top: 1px solid var(--c-border);
+  }
+  .btn-sheet-accion {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 11px 14px; border-radius: var(--r-lg);
+    border: 1.5px solid var(--c-border); background: var(--c-surface);
+    font-size: 13px; font-weight: 700; color: var(--c-text);
+    cursor: pointer; font-family: var(--f-ui); transition: all 0.15s;
+  }
+  .btn-sheet-accion:hover    { background: var(--c-surface-2); }
+  .btn-sheet-accion:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-sheet-estado          { border-color: #F59E0B; color: #92400E; }
+  .btn-sheet-estado:hover    { background: #FFFBEB; }
+  .reclamador-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.72rem; font-weight: 600; color: var(--c-primary);
+    padding: 2px 0; text-align: left; font-family: var(--f-ui);
+    text-decoration: underline; text-underline-offset: 2px;
+  }
+  .reclamador-btn:hover { opacity: 0.75; }
 </style>

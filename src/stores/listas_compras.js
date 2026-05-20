@@ -2,7 +2,7 @@
 import { writable, get } from 'svelte/store'
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  getDoc, getDocs, query, where, serverTimestamp, writeBatch
+  getDoc, getDocs, query, where, serverTimestamp, writeBatch, onSnapshot
 } from 'firebase/firestore'
 import { db } from '../lib/firebase.js'
 import { currentUser } from './auth.js'
@@ -174,9 +174,10 @@ export async function cargarPreciosParaOptimizar(items, localidad) {
   for (const p of todosPrecios) {
     if (!comercios.has(p.comercioId)) {
       comercios.set(p.comercioId, {
-        comercioId:     p.comercioId,
-        comercioNombre: p.comercioNombre,
-        precios:        new Map(),  // productoId → { precio, productoNombre }
+        comercioId:        p.comercioId,
+        comercioNombre:    p.comercioNombre,
+        comercioDireccion: p.comercioDireccion || '',
+        precios:           new Map(),  // productoId → { precio, productoNombre }
       })
     }
     const com = comercios.get(p.comercioId)
@@ -251,8 +252,9 @@ export function optimizarUnComercio(items, comerciosMap) {
     if (encontrados === 0) continue
 
     resultados.push({
-      comercioId:     com.comercioId,
-      comercioNombre: com.comercioNombre,
+      comercioId:        com.comercioId,
+      comercioNombre:    com.comercioNombre,
+      comercioDireccion: com.comercioDireccion || '',
       total,
       encontrados,
       totalItems:     items.length,
@@ -287,7 +289,7 @@ export function optimizarRepartido(items, comerciosMap) {
       const precio = com.precios.get(item.productoId)
       if (precio && precio.precio < mejorPrecio) {
         mejorPrecio   = precio.precio
-        mejorComercio = { id: cid, nombre: com.comercioNombre }
+        mejorComercio = { id: cid, nombre: com.comercioNombre, direccion: com.comercioDireccion || '' }
       }
     }
 
@@ -295,8 +297,9 @@ export function optimizarRepartido(items, comerciosMap) {
 
     if (!asignaciones.has(mejorComercio.id)) {
       asignaciones.set(mejorComercio.id, {
-        comercioId:     mejorComercio.id,
-        comercioNombre: mejorComercio.nombre,
+        comercioId:        mejorComercio.id,
+        comercioNombre:    mejorComercio.nombre,
+        comercioDireccion: mejorComercio.direccion || '',
         items:          [],
         total:          0,
       })
@@ -637,6 +640,94 @@ export async function resolverPendientesDeLista(listaId) {
   const actualizada = { ...lista, items: nuevosItems }
   listaActiva.set(actualizada)
   misListas.update(l => l.map(x => x.id === listaId ? actualizada : x))
+}
+
+/**
+ * Suscribe a cambios en tiempo real de las solicitudes pendientes de una lista.
+ * Cuando una solicitud pasa a 'cubierto', actualiza el ítem automáticamente.
+ * Devuelve una función para cancelar la suscripción (llamar en onDestroy).
+ */
+export function suscribirPendientes(listaId, localidad) {
+  const lista = get(listaActiva)
+  if (!lista) return () => {}
+
+  const pendientes = lista.items?.filter(i => i.pendiente && i.solicitudId) || []
+  if (!pendientes.length) return () => {}
+
+  const unsubs = []
+
+  for (const item of pendientes) {
+    const unsub = onSnapshot(
+      doc(db, 'solicitudes_productos', item.solicitudId),
+      async (snap) => {
+        if (!snap.exists()) return
+        const sol = snap.data()
+        if (sol.estado !== 'cubierto') return
+
+        // Buscar producto real en el catálogo
+        try {
+          const nombreNorm = item.productoNombre.toLowerCase()
+          const qProd = query(
+            collection(db, 'productos'),
+            where('localidad',  '==', localidad),
+            where('nombreNorm', '==', nombreNorm)
+          )
+          const snapProd = await getDocs(qProd)
+          let productoReal = null
+
+          if (!snapProd.empty) {
+            productoReal = { id: snapProd.docs[0].id, ...snapProd.docs[0].data() }
+          } else {
+            // Búsqueda parcial
+            const snapAll = await getDocs(query(
+              collection(db, 'productos'),
+              where('localidad', '==', localidad)
+            ))
+            const match = snapAll.docs.find(d =>
+              d.data().nombreNorm?.includes(nombreNorm) ||
+              nombreNorm.includes(d.data().nombreNorm || '')
+            )
+            if (match) productoReal = { id: match.id, ...match.data() }
+          }
+
+          if (!productoReal) return
+
+          // Actualizar el store local inmediatamente
+          listaActiva.update(l => {
+            if (!l) return l
+            const nuevosItems = l.items.map(i =>
+              i.pendiente && i.solicitudId === item.solicitudId
+                ? {
+                    productoId:        productoReal.id,
+                    productoNombre:    productoReal.nombre,
+                    productoMarca:     productoReal.marca     || '',
+                    productoUnidad:    productoReal.unidad    || 'u',
+                    productoCategoria: productoReal.categoria || 'otros',
+                    pendiente:         false,
+                  }
+                : i
+            )
+            return { ...l, items: nuevosItems }
+          })
+
+          // Guardar en Firestore
+          const listaActual = get(listaActiva)
+          if (listaActual) {
+            await updateDoc(doc(db, 'listas_compras', listaId), {
+              items:     listaActual.items,
+              editadaEn: serverTimestamp(),
+            })
+          }
+        } catch (e) {
+          console.error('suscribirPendientes:', e)
+        }
+      }
+    )
+    unsubs.push(unsub)
+  }
+
+  // Devolver función para cancelar todas las suscripciones
+  return () => unsubs.forEach(u => u())
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────

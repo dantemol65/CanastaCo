@@ -6,6 +6,7 @@
   import { totalNoLeidas, cargarNotificaciones } from '../stores/notificaciones.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
   import { localidades as allLocalidades } from '../data/argentina.js'
+  import { resolverNombresLocalidad, getNombreProvincia } from '../lib/georef.js'
   import { productos, cargarProductos, CATEGORIAS } from '../stores/precios.js'
   import { cargarSolicitudes } from '../stores/listas_compras.js'
   import { productoSolicitadoSeleccionado } from '../stores/contexto.js'
@@ -39,13 +40,17 @@
   $: displayName  = profile?.alias || user?.displayName?.split(' ')[0] || 'Usuario'
   $: displayPhoto = profile?.foto  || user?.photoURL || cargarFotoCacheada() || ''
 
-  $: localidadNombre = (() => {
-    if (!profile?.localidad) return 'tu zona'
-    const deptId = profile.departamento || ''
-    const locId  = profile.localidad
-    const locs   = allLocalidades[deptId] || []
-    return locs.find(l => l.id === locId)?.nombre || profile.localidad
-  })()
+  let localidadNombre = 'tu zona'
+
+  $: if (profile?.localidad) {
+    resolverNombresLocalidad([profile.localidad]).then(map => {
+      const nombre = map.get(String(profile.localidad)) || profile.localidad
+      const prov   = getNombreProvincia(profile.provincia || '')
+      localidadNombre = prov ? `${nombre} / ${prov}` : nombre
+    }).catch(() => {
+      localidadNombre = profile.localidad
+    })
+  }
 
   // ── Módulos ───────────────────────────────────────────────────────────────
   const modulos = [
