@@ -1,7 +1,8 @@
 <script>
   import { currentUser, userProfile, currentPage, saveUserProfile, signOut } from '../stores/auth.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
-  import { provincias, getDepartamentos, getLocalidades, getNombreProvincia } from '../lib/georef.js'
+  import { provincias, getDepartamentos, getLocalidades, getNombreProvincia, resolverNombresLocalidad } from '../lib/georef.js'
+  import { appConfig, cargarConfig, getLocalidadesHabilitadas } from '../stores/config.js'
   import BottomNav from '../components/BottomNav.svelte'
 
   // ── Form state ────────────────────────────────────────────────────────────
@@ -24,10 +25,31 @@
   let errorDepts        = false
   let errorLocs         = false
 
+  // ── Restricción de localidades ────────────────────────────────────────────
+  let localidadesRestricc   = []    // localidades habilitadas con nombre resuelto
+  let cargandoRestricc      = false
+
+  $: restriccionActiva = $appConfig?.restriccionActiva && ($appConfig?.localidadesHabilitadas?.length > 0)
+
   // ── Precargar perfil guardado ─────────────────────────────────────────────
   import { onMount } from 'svelte'
 
-  onMount(() => {
+  onMount(async () => {
+    // Cargar config global si no está cargada
+    if (!$appConfig) await cargarConfig()
+
+    // Si hay restricción, resolver nombres de las localidades habilitadas
+    if ($appConfig?.restriccionActiva && $appConfig?.localidadesHabilitadas?.length > 0) {
+      cargandoRestricc = true
+      const ids = $appConfig.localidadesHabilitadas
+      const map = await resolverNombresLocalidad(ids).catch(() => new Map())
+      localidadesRestricc = ids.map(id => ({
+        id,
+        label: map.get(`${id}__label`) || map.get(id) || id,
+      }))
+      cargandoRestricc = false
+    }
+
     if ($userProfile && !loaded) {
       loaded         = true
       alias          = $userProfile.alias  || ''
@@ -254,85 +276,115 @@
           </div>
         </div>
 
-        <!-- Provincia -->
-        <div class="form-group" class:has-error={errors.provincia}>
-          <label class="form-label" for="provincia">Provincia</label>
-          <select id="provincia" class="form-select" class:error={errors.provincia}
-            bind:value={provinciaId} on:change={onProvinciaChange}>
-            <option value="">Seleccioná tu provincia…</option>
-            {#each provincias as prov}
-              <option value={prov.id}>{prov.nombre}</option>
-            {/each}
-          </select>
-          {#if errors.provincia}
-            <span class="field-error">{errors.provincia}</span>
-          {/if}
-        </div>
+        {#if restriccionActiva}
+          <!-- Modo restringido: selector simple de localidades habilitadas -->
+          <div class="form-group restricc-aviso">
+            <div class="restricc-banner">
+              📍 La app está disponible en localidades seleccionadas durante esta etapa de evaluación.
+            </div>
+          </div>
+          <div class="form-group" class:has-error={errors.localidad}>
+            <label class="form-label" for="localidad-restricc">Localidad</label>
+            {#if cargandoRestricc}
+              <div class="form-select" style="color:var(--c-text-light)">Cargando localidades…</div>
+            {:else}
+              <select
+                id="localidad-restricc"
+                class="form-select"
+                class:error={errors.localidad}
+                bind:value={localidadId}
+                on:change={() => {
+                  // Auto-completar provincia y departamento desde la config
+                  const cfg = $appConfig
+                  const idx = cfg.localidadesHabilitadas?.indexOf(localidadId)
+                  if (idx >= 0 && cfg.provinciasDe?.[localidadId]) {
+                    provinciaId    = cfg.provinciasDe[localidadId]
+                    departamentoId = cfg.departamentosDe?.[localidadId] || ''
+                  }
+                }}
+              >
+                <option value="">Seleccioná tu localidad…</option>
+                {#each localidadesRestricc as loc}
+                  <option value={loc.id}>{loc.label}</option>
+                {/each}
+              </select>
+            {/if}
+            {#if errors.localidad}
+              <span class="field-error">{errors.localidad}</span>
+            {/if}
+          </div>
 
-        <!-- Departamento / Partido -->
-        <div class="form-group" class:has-error={errors.departamento}>
-          <label class="form-label" for="departamento">
-            {provinciaId === '06' ? 'Partido' : 'Departamento / Partido'}
-          </label>
-          <select
-            id="departamento"
-            class="form-select"
-            class:error={errors.departamento}
-            bind:value={departamentoId}
-            on:change={onDepartamentoChange}
-            disabled={!provinciaId || loadingDepts}
-          >
-            <option value="">
-              {#if !provinciaId}
-                Primero elegí provincia
-              {:else if loadingDepts}
-                Cargando…
-              {:else if errorDepts}
-                Error al cargar — revisá conexión
-              {:else}
-                Seleccioná…
-              {/if}
-            </option>
-            {#each departamentos as dept}
-              <option value={dept.id}>{dept.nombre}</option>
-            {/each}
-          </select>
-          {#if errors.departamento}
-            <span class="field-error">{errors.departamento}</span>
-          {/if}
-        </div>
+        {:else}
+          <!-- Modo normal: selectores en cascada provincia → departamento → localidad -->
+          <!-- Provincia -->
+          <div class="form-group" class:has-error={errors.provincia}>
+            <label class="form-label" for="provincia">Provincia</label>
+            <select id="provincia" class="form-select" class:error={errors.provincia}
+              bind:value={provinciaId} on:change={onProvinciaChange}>
+              <option value="">Seleccioná tu provincia…</option>
+              {#each provincias as prov}
+                <option value={prov.id}>{prov.nombre}</option>
+              {/each}
+            </select>
+            {#if errors.provincia}
+              <span class="field-error">{errors.provincia}</span>
+            {/if}
+          </div>
 
-        <!-- Localidad -->
-        <div class="form-group" class:has-error={errors.localidad}>
-          <label class="form-label" for="localidad">Localidad / Ciudad</label>
-          <select
-            id="localidad"
-            class="form-select"
-            class:error={errors.localidad}
-            bind:value={localidadId}
-            disabled={!departamentoId || loadingLocs}
-          >
-            <option value="">
-              {#if !departamentoId}
-                Primero elegí departamento
-              {:else if loadingLocs}
-                Cargando…
-              {:else if errorLocs}
-                Error al cargar — revisá conexión
-              {:else if localidades.length === 0}
-                Sin localidades registradas
-              {:else}
-                Seleccioná tu localidad…
-              {/if}
-            </option>
-            {#each localidades as loc}
-              <option value={loc.id}>{loc.nombre}</option>
-            {/each}
-          </select>
-          {#if errors.localidad && localidades.length > 0}
-            <span class="field-error">{errors.localidad}</span>
-          {/if}
-        </div>
+          <!-- Departamento / Partido -->
+          <div class="form-group" class:has-error={errors.departamento}>
+            <label class="form-label" for="departamento">
+              {provinciaId === '06' ? 'Partido' : 'Departamento / Partido'}
+            </label>
+            <select
+              id="departamento"
+              class="form-select"
+              class:error={errors.departamento}
+              bind:value={departamentoId}
+              on:change={onDepartamentoChange}
+              disabled={!provinciaId || loadingDepts}
+            >
+              <option value="">
+                {#if !provinciaId}Primero elegí provincia
+                {:else if loadingDepts}Cargando…
+                {:else if errorDepts}Error al cargar — revisá conexión
+                {:else}Seleccioná…{/if}
+              </option>
+              {#each departamentos as dept}
+                <option value={dept.id}>{dept.nombre}</option>
+              {/each}
+            </select>
+            {#if errors.departamento}
+              <span class="field-error">{errors.departamento}</span>
+            {/if}
+          </div>
+
+          <!-- Localidad -->
+          <div class="form-group" class:has-error={errors.localidad}>
+            <label class="form-label" for="localidad">Localidad / Ciudad</label>
+            <select
+              id="localidad"
+              class="form-select"
+              class:error={errors.localidad}
+              bind:value={localidadId}
+              disabled={!departamentoId || loadingLocs}
+            >
+              <option value="">
+                {#if !departamentoId}Primero elegí departamento
+                {:else if loadingLocs}Cargando…
+                {:else if errorLocs}Error al cargar — revisá conexión
+                {:else if localidades.length === 0}Sin localidades registradas
+                {:else}Seleccioná tu localidad…{/if}
+              </option>
+              {#each localidades as loc}
+                <option value={loc.id}>{loc.nombre}</option>
+              {/each}
+            </select>
+            {#if errors.localidad && localidades.length > 0}
+              <span class="field-error">{errors.localidad}</span>
+            {/if}
+          </div>
+        {/if}
 
         <!-- Barrio -->
         <div class="form-group">
@@ -535,4 +587,12 @@
     border-radius: 50%;
     animation: spin 0.7s linear infinite;
   }
+
+  /* Restricción de localidades */
+  .restricc-banner {
+    background: rgba(27,107,58,0.08); border: 1px solid rgba(27,107,58,0.25);
+    border-radius: var(--r-lg); padding: 12px 14px;
+    font-size: 13px; color: var(--c-primary); line-height: 1.5;
+  }
+
 </style>

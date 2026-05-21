@@ -12,6 +12,7 @@
   } from 'firebase/firestore'
   import { db } from '../lib/firebase.js'
   import { getNombreProvincia, resolverNombresLocalidad, formatLocalidadProvincia } from '../lib/georef.js'
+  import { appConfig, cargarConfig, guardarConfig } from '../stores/config.js'
   import { generarCredencial } from '../stores/comercios.js'
   import { generarPDFCredencial } from '../lib/credencial.js'
 
@@ -36,6 +37,50 @@
   let busquedaUsuario  = ''
 
   let precios          = []
+
+  // ── Configuración ─────────────────────────────────────────────────────────
+  let cfgRestriccion    = false
+  let cfgLocalidades    = []          // IDs habilitadas
+  let cfgNuevaLocalidad = ''          // input para agregar
+  let guardandoCfg      = false
+
+  async function cargarConfigAdmin() {
+    if (!$appConfig) await cargarConfig()
+    cfgRestriccion = $appConfig?.restriccionActiva || false
+    cfgLocalidades = [...($appConfig?.localidadesHabilitadas || [])]
+  }
+
+  async function guardarConfigAdmin() {
+    guardandoCfg = true
+    try {
+      // Guardar también provincia/departamento de cada localidad para autocompletar en Perfil
+      const mapNombres = await resolverNombresLocalidad(cfgLocalidades)
+      await guardarConfig({
+        restriccionActiva:       cfgRestriccion,
+        localidadesHabilitadas:  cfgLocalidades,
+      })
+      mostrarToast('Configuración guardada')
+    } catch (e) {
+      mostrarToast('Error: ' + e.message)
+    } finally {
+      guardandoCfg = false
+    }
+  }
+
+  function agregarLocalidadCfg() {
+    const id = cfgNuevaLocalidad.trim()
+    if (!id || cfgLocalidades.includes(id)) return
+    cfgLocalidades = [...cfgLocalidades, id]
+    cfgNuevaLocalidad = ''
+    // Resolver nombre para mostrar
+    resolverNombresLocalidad([id]).then(map => {
+      nombresLocalidad = new Map([...nombresLocalidad, ...map])
+    })
+  }
+
+  function quitarLocalidadCfg(id) {
+    cfgLocalidades = cfgLocalidades.filter(l => l !== id)
+  }
 
   // ── Sugerencias ───────────────────────────────────────────────────────────
   let sugerencias      = []
@@ -171,7 +216,8 @@
       if (s === 'comercios')   await cargarComerciosAdmin()
       if (s === 'usuarios')    await cargarUsuarios()
       if (s === 'precios')     await cargarPreciosAdmin()
-      if (s === 'sugerencias') await cargarSugerencias()
+      if (s === 'sugerencias')    await cargarSugerencias()
+    if (s === 'configuracion')  await cargarConfigAdmin()
     } finally { cargando = false }
   }
 
@@ -401,6 +447,7 @@
       { id:'precios',        label:'Precios', icon:'🏷️' },
       { id:'sugerencias',    label:'Sugerencias', icon:'💡', badge: noLeidasSug },
       { id:'credencial',     label:'Credencial', icon:'📄' },
+      { id:'configuracion',  label:'Config.', icon:'⚙️' },
     ] as item}
       <button
         class="admin-nav-btn"
@@ -764,6 +811,73 @@
           {/if}
         </div>
       {/if}
+
+
+    {:else if seccion === 'configuracion'}
+      <!-- ── Configuración global ── -->
+      <h2 class="section-title">Restricción de localidades</h2>
+
+      <div class="cfg-card">
+        <div class="cfg-row">
+          <div class="cfg-row-info">
+            <span class="cfg-label">Restringir localidades</span>
+            <span class="cfg-desc">Solo los usuarios de las localidades habilitadas podrán registrarse</span>
+          </div>
+          <label class="toggle-wrap">
+            <input type="checkbox" bind:checked={cfgRestriccion} class="toggle-input" />
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+      </div>
+
+      {#if cfgRestriccion}
+        <div class="cfg-card" style="margin-top:12px">
+          <p class="cfg-section-label">Localidades habilitadas</p>
+
+          {#if cfgLocalidades.length === 0}
+            <p class="cfg-empty">Sin localidades — todos los usuarios podrán elegir cualquier localidad.</p>
+          {:else}
+            <div class="cfg-locs-lista">
+              {#each cfgLocalidades as id}
+                <div class="cfg-loc-item">
+                  <span class="cfg-loc-nombre">
+                    {nombresLocalidad.get(`${id}__label`) || nombresLocalidad.get(id) || id}
+                  </span>
+                  <button class="cfg-loc-quitar" on:click={() => quitarLocalidadCfg(id)}>✕</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+
+          <div class="cfg-add-row">
+            <input
+              type="text"
+              class="form-input cfg-input"
+              placeholder="ID de localidad (ej: 66063010)"
+              bind:value={cfgNuevaLocalidad}
+              on:keydown={e => e.key === 'Enter' && agregarLocalidadCfg()}
+            />
+            <button class="btn btn-primary cfg-add-btn" on:click={agregarLocalidadCfg}>
+              + Agregar
+            </button>
+          </div>
+          <p class="cfg-hint">
+            Buscá el ID en:
+            <a href="https://apis.datos.gob.ar/georef/api/localidades?nombre=metan&provincia=salta" target="_blank" rel="noopener">
+              API Georef
+            </a>
+          </p>
+        </div>
+      {/if}
+
+      <button
+        class="btn btn-primary btn-full"
+        style="margin-top:16px"
+        on:click={guardarConfigAdmin}
+        disabled={guardandoCfg}
+      >
+        {guardandoCfg ? 'Guardando…' : '💾 Guardar configuración'}
+      </button>
 
     {/if}
 
@@ -1288,4 +1402,41 @@
     text-decoration: underline; text-underline-offset: 2px;
   }
   .reclamador-btn:hover { opacity: 0.75; }
+
+  /* Configuración */
+  .section-title { font-family: var(--f-brand); font-size: 18px; margin-bottom: 14px; }
+  .cfg-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: var(--r-xl); padding: 16px; }
+  .cfg-row  { display: flex; align-items: center; gap: 12px; }
+  .cfg-row-info { flex: 1; }
+  .cfg-label { display: block; font-size: 14px; font-weight: 700; color: var(--c-text); }
+  .cfg-desc  { display: block; font-size: 12px; color: var(--c-text-light); margin-top: 3px; }
+  .cfg-section-label { font-size: 12px; font-weight: 700; color: var(--c-text-mid); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 12px; }
+  .cfg-empty { font-size: 13px; color: var(--c-text-light); }
+  .cfg-locs-lista { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+  .cfg-loc-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--c-surface-2); border-radius: var(--r-md); }
+  .cfg-loc-nombre { flex: 1; font-size: 13px; font-weight: 600; color: var(--c-text); }
+  .cfg-loc-quitar { background: none; border: none; color: var(--c-text-light); cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  .cfg-loc-quitar:hover { color: var(--c-error); }
+  .cfg-add-row { display: flex; gap: 8px; }
+  .cfg-input   { flex: 1; font-size: 13px; }
+  .cfg-add-btn { white-space: nowrap; padding: 10px 16px; font-size: 13px; }
+  .cfg-hint { font-size: 11px; color: var(--c-text-light); margin-top: 10px; line-height: 1.5; }
+  .cfg-hint a { color: var(--c-primary); }
+
+  /* Toggle switch */
+  .toggle-wrap  { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
+  .toggle-input { position: absolute; opacity: 0; width: 0; height: 0; }
+  .toggle-track {
+    width: 44px; height: 26px; background: var(--c-border); border-radius: 13px;
+    transition: background 0.2s; cursor: pointer; display: block;
+  }
+  .toggle-track::after {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; background: white; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    transition: transform 0.2s;
+  }
+  .toggle-input:checked + .toggle-track { background: var(--c-primary); }
+  .toggle-input:checked + .toggle-track::after { transform: translateX(18px); }
+
 </style>

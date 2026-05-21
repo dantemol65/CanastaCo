@@ -37,6 +37,8 @@
   let mostrarForm    = false
   let mostrarEscaner = false
   let cacheInfo      = null   // texto de antigüedad del caché
+  let yaConfirmados  = new Set()  // IDs de precios ya confirmados por el usuario en esta sesión
+  let yaReportados   = new Set()  // IDs de precios ya reportados por el usuario
   let solicitudIdActual = null  // si se abrió desde una solicitud, guardar el id
   let paso           = 1      // 1: buscar producto  2: ingresar precio
 
@@ -106,6 +108,19 @@
     ])
     cacheInfo = preciosCacheInfo(comercioId)
     cargando = false
+
+    // Marcar precios ya confirmados y reportados por el usuario actual
+    const uid = user?.uid
+    if (uid) {
+      const confirmados = new Set()
+      const reportados  = new Set()
+      $preciosComercio.forEach(p => {
+        if (p.verificaciones?.some(v => v.uid === uid)) confirmados.add(p.id)
+        if (p.reportes?.some(r => r.uid === uid))       reportados.add(p.id)
+      })
+      yaConfirmados = confirmados
+      yaReportados  = reportados
+    }
 
     // Si viene un producto solicitado seleccionado desde Home → abrir form pre-cargado
     const solicitado = get(productoSolicitadoSeleccionado)
@@ -323,8 +338,13 @@
   }
 
   async function handleReportar(precioId) {
+    if (yaReportados.has(precioId)) {
+      showToast('Ya reportaste este precio', 'err')
+      return
+    }
     try {
       const total = await reportarPrecioIncorrecto(precioId)
+      yaReportados = new Set([...yaReportados, precioId])
       if (total >= 3) {
         preciosComercio.update(l => l.filter(p => p.id !== precioId))
         showToast('Precio removido por múltiples reportes')
@@ -337,8 +357,13 @@
   }
 
   async function handleVerificar(precioId) {
+    if (yaConfirmados.has(precioId)) {
+      showToast('Ya confirmaste este precio', 'err')
+      return
+    }
     try {
       await verificarPrecio(precioId)
+      yaConfirmados = new Set([...yaConfirmados, precioId])
       preciosComercio.update(l =>
         l.map(p => p.id === precioId
           ? { ...p, totalVerificaciones: (p.totalVerificaciones || 0) + 1 }
@@ -617,12 +642,15 @@
                   <!-- Acciones comunidad: confirmar, comparar, reportar -->
                   <div class="precio-acciones">
                     <button class="accion-btn verif-btn"
+                      class:ya-confirmado={yaConfirmados.has(precio.id)}
                       on:click={() => handleVerificar(precio.id)}
-                      title="Confirmar precio">
+                      title={yaConfirmados.has(precio.id) ? 'Ya confirmaste este precio' : 'Confirmar precio'}
+                      disabled={yaConfirmados.has(precio.id)}
+                    >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                         <polyline points="20 6 9 17 4 12"/>
                       </svg>
-                      Confirmar
+                      {yaConfirmados.has(precio.id) ? 'Confirmado' : 'Confirmar'}
                     </button>
 
                     <button class="accion-btn comparar-btn"
@@ -635,14 +663,17 @@
                     </button>
 
                     <button class="accion-btn report-btn"
+                      class:ya-reportado={yaReportados.has(precio.id)}
                       on:click={() => handleReportar(precio.id)}
-                      title="Reportar precio incorrecto">
+                      title={yaReportados.has(precio.id) ? 'Ya reportaste este precio' : 'Reportar precio incorrecto'}
+                      disabled={yaReportados.has(precio.id)}
+                    >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
                         <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
                         <line x1="12" y1="9" x2="12" y2="13"/>
                         <line x1="12" y1="17" x2="12.01" y2="17"/>
                       </svg>
-                      Incorrecto
+                      {yaReportados.has(precio.id) ? 'Reportado' : 'Incorrecto'}
                     </button>
                   </div>
                 {/if}
@@ -1061,8 +1092,10 @@
   }
   .accion-btn:active { transform: scale(0.95); }
   .verif-btn   { border-color: #059669; color: #059669; }
+  .verif-btn.ya-confirmado { background: #D1FAE5; color: #065F46; opacity: 0.7; cursor: default; }
   .comparar-btn { border-color: var(--c-primary); color: var(--c-primary); }
   .report-btn  { border-color: #DC2626; color: #DC2626; }
+  .report-btn.ya-reportado { background: #FEE2E2; color: #991B1B; opacity: 0.7; cursor: default; }
   .verif-btn:hover   { background: #D1FAE5; }
   .comparar-btn:hover { background: rgba(27,107,58,0.08); }
   .report-btn:hover  { background: #FEE2E2; }
