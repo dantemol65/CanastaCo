@@ -16,7 +16,8 @@
   import ListaPrecios     from './pages/ListaPrecios.svelte'
   import ListaTematica    from './pages/ListaTematica.svelte'
   import ComparadorPrecios from './pages/ComparadorPrecios.svelte'
-  import PublicarLanding  from './pages/PublicarLanding.svelte'
+  import PublicarLanding      from './pages/PublicarLanding.svelte'
+  import GestionListasComercio from './pages/GestionListasComercio.svelte'
   import Notificaciones   from './pages/Notificaciones.svelte'
   import Bloqueado        from './pages/Bloqueado.svelte'
   import Sugerencias      from './pages/Sugerencias.svelte'
@@ -28,32 +29,37 @@
     initAuth()
     cargarConfig()
 
-    // Agregar entrada al historial para interceptar el botón back del móvil
-    history.pushState({ canastaco: true }, '')
+    // Técnica para interceptar back en Android PWA:
+    // 1. Reemplazar el estado actual con uno nuestro
+    // 2. Agregar una entrada extra encima
+    // Así cuando el usuario presiona back, baja a nuestro estado base
+    // y podemos detectarlo sin cerrar la app
+    history.replaceState({ canastaco: 'base' }, '')
+    history.pushState({ canastaco: 'top' }, '')
+
+    const onPopState = (e) => {
+      // El usuario presionó back — siempre volver a agregar la entrada
+      // para que el próximo back también sea interceptado
+      if (e.state?.canastaco === 'base' || !e.state?.canastaco) {
+        const pagina = $currentPage
+
+        if (pagina === 'home' || pagina === 'login' || pagina === 'bloqueado') {
+          // Estamos en la pantalla raíz → mostrar confirmación de salida
+          mostrarConfirmSalir = true
+        }
+
+        // Siempre re-agregar la entrada top para seguir interceptando
+        history.pushState({ canastaco: 'top' }, '')
+      }
+    }
 
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
   })
 
-  function onPopState(e) {
-    const pagina = $currentPage
-
-    // Si está en Home o Login → confirmar salida
-    if (pagina === 'home' || pagina === 'login' || pagina === 'loading') {
-      mostrarConfirmSalir = true
-      // Volver a agregar la entrada para que el próximo back también sea interceptado
-      history.pushState({ canastaco: true }, '')
-      return
-    }
-
-    // En cualquier otra pantalla → navegación interna (volver atrás)
-    // No hacemos nada — cada pantalla tiene su propio botón volver
-    history.pushState({ canastaco: true }, '')
-  }
-
   function confirmarSalir() {
     mostrarConfirmSalir = false
-    // Eliminar el estado que pusimos y dejar que el browser cierre/salga
+    // Ir al estado base y luego atrás para cerrar la PWA
     history.go(-2)
   }
 
@@ -105,8 +111,12 @@
 {:else if basePage === 'precios-comercio'}
   <Precios comercioId={pageParam} />
 
+{:else if basePage === 'gestion-listas'}
+  <GestionListasComercio comercioId={pageParam} />
+
 {:else if basePage === 'lista-precios'}
-  <ListaPrecios comercioId={pageParam} />
+  {@const [cId, lId] = (pageParam || '').split(':')}
+  <ListaPrecios comercioId={cId || pageParam} listaIdExistente={lId || ''} />
 
 {:else if basePage === 'lista-tematica'}
   <ListaTematica />

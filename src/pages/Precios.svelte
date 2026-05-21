@@ -382,7 +382,8 @@
   }
 
   function irListaPrecios() {
-    currentPage.set('lista-precios:' + comercioId)
+    // Ir a gestión de listas en lugar de crear una nueva directo
+    currentPage.set('gestion-listas:' + comercioId)
   }
 
   // ── Editar / eliminar precios propios (solo owner) ────────────────────

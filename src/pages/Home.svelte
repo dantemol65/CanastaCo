@@ -2,7 +2,7 @@
   // ── Imports ───────────────────────────────────────────────────────────────
   import { onMount } from 'svelte'
   import { writable } from 'svelte/store'
-  import { currentUser, userProfile, currentPage, pendingSync, syncPendingProfile, usuarioSuspendido } from '../stores/auth.js'
+  import { currentUser, userProfile, currentPage, pendingSync, syncPendingProfile } from '../stores/auth.js'
   import { totalNoLeidas, cargarNotificaciones } from '../stores/notificaciones.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
   import { localidades as allLocalidades } from '../data/argentina.js'
@@ -41,15 +41,12 @@
   $: displayPhoto = profile?.foto  || user?.photoURL || cargarFotoCacheada() || ''
 
   let localidadNombre = 'tu zona'
-
   $: if (profile?.localidad) {
     resolverNombresLocalidad([profile.localidad]).then(map => {
       const nombre = map.get(String(profile.localidad)) || profile.localidad
       const prov   = getNombreProvincia(profile.provincia || '')
       localidadNombre = prov ? `${nombre} / ${prov}` : nombre
-    }).catch(() => {
-      localidadNombre = profile.localidad
-    })
+    }).catch(() => { localidadNombre = profile.localidad })
   }
 
   // ── Módulos ───────────────────────────────────────────────────────────────
@@ -136,11 +133,6 @@
   function goAdmin()    { currentPage.set('admin') }
   function goMisListas(){ currentPage.set('mis-listas') }
 
-  // ── FAB expandible ────────────────────────────────────────────────────────
-  let fabAbierto = false
-  function toggleFab() { fabAbierto = !fabAbierto }
-  function irSugerencias() { fabAbierto = false; currentPage.set('sugerencias') }
-
   // ── Mount ─────────────────────────────────────────────────────────────────
   onMount(() => {
     checkConexion()
@@ -184,7 +176,7 @@
         </button>
       {/if}
 
-      <!-- Campanita de notificaciones para todos los usuarios -->
+      <!-- Campanita para todos los usuarios -->
       <button class="btn-notif" on:click={() => currentPage.set('notificaciones')} aria-label="Notificaciones">
         🔔
         {#if $totalNoLeidas > 0}
@@ -230,7 +222,7 @@
         <p class="greeting-sub">Comercios y precios de tu localidad</p>
       </section>
 
-      <!-- Buscador de productos -->
+      <!-- 1. Buscador de productos -->
       <section class="busq-section">
         <div class="busq-input-wrap">
           <svg class="busq-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
@@ -276,6 +268,42 @@
           <div class="busq-empty">Sin resultados para "<strong>{busquedaProd}</strong>" en tu localidad</div>
         {/if}
       </section>
+
+      <!-- 2. Mis Listas -->
+      <button class="mis-listas-btn" on:click={goMisListas}>
+        <div class="mls-icon">🛒</div>
+        <div class="mls-info">
+          <span class="mls-titulo">Mis Listas</span>
+          <span class="mls-sub">Organizá tu compra y encontrá los mejores precios</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-primary)" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      <!-- 3. Comercios -->
+      <button class="acceso-btn" on:click={() => currentPage.set('buscar')}>
+        <div class="acceso-icon" style="background: rgba(27,107,58,0.1)">🏪</div>
+        <div class="acceso-info">
+          <span class="acceso-titulo">Comercios</span>
+          <span class="acceso-sub">Explorá comercios de tu zona, verificalos y agregá nuevos</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-light)" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
+
+      <!-- 4. Precios -->
+      <button class="acceso-btn" on:click={() => currentPage.set('publicar')}>
+        <div class="acceso-icon" style="background: rgba(2,119,189,0.1)">🏷️</div>
+        <div class="acceso-info">
+          <span class="acceso-titulo">Precios</span>
+          <span class="acceso-sub">Consultá, cargá y comparás precios entre comercios de tu localidad</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-text-light)" stroke-width="2.5" stroke-linecap="round">
+          <polyline points="9 18 15 12 9 6"/>
+        </svg>
+      </button>
 
       <!-- Banner solicitudes comunidad -->
       {#if solicitudes.length > 0}
@@ -333,74 +361,23 @@
         </div>
       {/if}
 
-      <!-- Mis Listas -->
-      <button class="mis-listas-btn" on:click={goMisListas}>
-        <div class="mls-icon">🛒</div>
-        <div class="mls-info">
-          <span class="mls-titulo">Mis Listas</span>
-          <span class="mls-sub">Organizá tu compra y encontrá los mejores precios</span>
-        </div>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--c-primary)" stroke-width="2.5" stroke-linecap="round">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
-      </button>
-
-      <!-- Módulos completados -->
-      {#each [
-        { num: 1, label: 'Login y Perfil' },
-        { num: 2, label: 'Comercios' },
-        { num: 3, label: 'Precios' },
-      ] as m}
-        <div class="module-done">
-          <div class="module-done-icon">✓</div>
-          <div class="module-done-text">
-            <span class="module-done-num">Módulo {m.num}</span>
-            <span class="module-done-label">{m.label}</span>
-          </div>
-          <div class="module-done-badge">
-            <span class="badge badge-green">Completo</span>
-          </div>
-        </div>
-      {/each}
-
-      <!-- Próximos módulos -->
+      <!-- Próximos módulos (solo los no disponibles) -->
       <section class="modules-section">
-        <div class="section-header">
-          <h2 class="section-title">Módulos</h2>
-        </div>
-
         <div class="modules-grid">
-          {#each modulos as mod}
-            <svelte:element
-              this={mod.disponible ? 'button' : 'div'}
-              class="module-card"
-              class:module-available={mod.disponible}
-              style="--mod-color: {mod.color}"
-              role={mod.disponible ? 'button' : undefined}
-              aria-label={mod.disponible ? 'Ir a ' + mod.titulo : undefined}
-              on:click={() => mod.disponible && mod.pagina && currentPage.set(mod.pagina)}
-            >
+          {#each modulos.filter(m => !m.disponible) as mod}
+            <div class="module-card" style="--mod-color: {mod.color}">
               <div class="module-icon">{mod.icon}</div>
               <div class="module-info">
-                <div class="module-num">Módulo {mod.id}</div>
                 <div class="module-title">{mod.titulo}</div>
                 <p class="module-desc">{mod.desc}</p>
               </div>
-              {#if mod.disponible}
-                <div class="module-arrow">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                    <polyline points="9 18 15 12 9 6"/>
-                  </svg>
-                </div>
-              {:else}
-                <div class="module-lock" aria-label="No disponible aún">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                  </svg>
-                </div>
-              {/if}
-            </svelte:element>
+              <div class="module-lock" aria-label="No disponible aún">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+              </div>
+            </div>
           {/each}
         </div>
       </section>
@@ -418,41 +395,6 @@
   </div>
 
   <!-- Bottom Navigation -->
-  <!-- FAB expandible -->
-  <div class="fab-wrap" class:fab-open={fabAbierto}>
-
-    <!-- Opciones desplegables -->
-    <div class="fab-opciones" aria-hidden={!fabAbierto}>
-      <button class="fab-opcion" on:click={irSugerencias} tabindex={fabAbierto ? 0 : -1}>
-        <span class="fab-opcion-label">Sugerencias</span>
-        <div class="fab-opcion-icono">💡</div>
-      </button>
-    </div>
-
-    <!-- Botón principal + / × -->
-    <button
-      class="fab-principal"
-      on:click={toggleFab}
-      aria-label={fabAbierto ? 'Cerrar' : 'Más opciones'}
-      aria-expanded={fabAbierto}
-    >
-      <svg
-        class="fab-icon"
-        width="22" height="22" viewBox="0 0 24 24"
-        fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"
-        style="transform: rotate({fabAbierto ? 45 : 0}deg); transition: transform 0.25s ease"
-      >
-        <line x1="12" y1="5" x2="12" y2="19"/>
-        <line x1="5" y1="12" x2="19" y2="12"/>
-      </svg>
-    </button>
-  </div>
-
-  <!-- Overlay para cerrar al tocar fuera -->
-  {#if fabAbierto}
-    <div class="fab-overlay" on:click={toggleFab} role="presentation"></div>
-  {/if}
-
   <BottomNav active="home" />
 
 </div>
@@ -502,23 +444,6 @@
     align-items: center;
     justify-content: center;
   }
-  .btn-notif {
-    position: relative;
-    background: none; border: none;
-    font-size: 20px; cursor: pointer;
-    padding: 4px; line-height: 1;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .notif-badge {
-    position: absolute; top: -2px; right: -4px;
-    background: #DC2626; color: white;
-    font-size: 10px; font-weight: 800;
-    min-width: 16px; height: 16px;
-    border-radius: 8px; padding: 0 4px;
-    display: flex; align-items: center; justify-content: center;
-    font-family: var(--f-ui);
-  }
-
   .admin-notif-badge {
     position: absolute;
     top: -4px;
@@ -836,70 +761,38 @@
   .mls-sub    { display: block; font-size: 12px; color: var(--c-text-light); margin-top: 2px; line-height: 1.4; }
 
 
-  /* ── Banner suspensión ──────────────────────────────────────────── */
-  .suspension-banner {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 16px; font-size: 13px; font-weight: 600;
-    background: #FEF3C7; color: #92400E;
-    border-bottom: 1px solid #F59E0B;
+  /* ── Botones de acceso (Comercios / Precios) ──────────────────────── */
+  .acceso-btn {
+    display: flex; align-items: center; gap: 14px; padding: 14px 16px;
+    width: 100%; text-align: left;
+    background: var(--c-surface); border: 1px solid var(--c-border);
+    border-radius: var(--r-xl); cursor: pointer; transition: all 0.15s;
+    box-shadow: var(--s-xs); -webkit-tap-highlight-color: transparent;
   }
+  .acceso-btn:active { transform: scale(0.98); background: var(--c-surface-2); }
+  .acceso-icon {
+    font-size: 22px; width: 44px; height: 44px;
+    border-radius: 10px; display: flex; align-items: center;
+    justify-content: center; flex-shrink: 0;
+  }
+  .acceso-info  { flex: 1; min-width: 0; text-align: left; }
+  .acceso-titulo { display: block; font-size: 15px; font-weight: 700; color: var(--c-text); }
+  .acceso-sub    { display: block; font-size: 12px; color: var(--c-text-light); margin-top: 2px; line-height: 1.4; }
 
 
-  /* ── FAB expandible ─────────────────────────────────────────────── */
-  .fab-wrap {
-    position: fixed;
-    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
-    right: 20px;
-    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
-    z-index: 100;
+  /* ── Campanita de notificaciones ────────────────────────────────── */
+  .btn-notif {
+    position: relative; background: none; border: none;
+    font-size: 20px; cursor: pointer; padding: 4px;
+    line-height: 1; -webkit-tap-highlight-color: transparent;
   }
-
-  .fab-principal {
-    width: 52px; height: 52px; border-radius: 50%;
-    background: var(--c-primary); border: none;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: var(--s-lg); cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-    transition: background 0.2s, transform 0.15s;
-    flex-shrink: 0;
-  }
-  .fab-principal:active { transform: scale(0.93); }
-  .fab-open .fab-principal { background: #333; }
-
-  .fab-opciones {
-    display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-    pointer-events: none; opacity: 0;
-    transform: translateY(8px) scale(0.95);
-    transition: opacity 0.2s ease, transform 0.2s ease;
-  }
-  .fab-open .fab-opciones {
-    pointer-events: auto; opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-
-  .fab-opcion {
-    display: flex; align-items: center; gap: 10px;
-    background: none; border: none; cursor: pointer;
-    -webkit-tap-highlight-color: transparent;
-  }
-  .fab-opcion-label {
-    background: var(--c-surface); color: var(--c-text);
-    font-size: 13px; font-weight: 700; padding: 6px 14px;
-    border-radius: var(--r-full); box-shadow: var(--s-sm);
-    white-space: nowrap; font-family: var(--f-ui);
-    border: 1px solid var(--c-border);
-  }
-  .fab-opcion-icono {
-    width: 42px; height: 42px; border-radius: 50%;
-    background: var(--c-surface); box-shadow: var(--s-sm);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 18px; border: 1px solid var(--c-border);
-    flex-shrink: 0;
-  }
-
-  .fab-overlay {
-    position: fixed; inset: 0; z-index: 99;
-    background: rgba(0,0,0,0.15);
+  .notif-badge {
+    position: absolute; top: -2px; right: -4px;
+    background: #DC2626; color: white;
+    font-size: 10px; font-weight: 800;
+    min-width: 16px; height: 16px; border-radius: 8px;
+    padding: 0 4px; display: flex; align-items: center;
+    justify-content: center; font-family: var(--f-ui);
   }
 
 </style>

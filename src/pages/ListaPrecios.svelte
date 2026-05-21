@@ -14,7 +14,8 @@
     formatPrecio,
   } from '../stores/precios.js'
 
-  export let comercioId = ''
+  export let comercioId       = ''
+  export let listaIdExistente = ''   // si viene de GestionListasComercio
 
   let comercio     = null
   let cargando     = true
@@ -42,6 +43,7 @@
   let vencimiento    = ''
   let guardandoItem  = false
   let publicando     = false
+  let listaNombre    = ''
 
   $: user      = $currentUser
   $: perfil    = $userProfile
@@ -72,17 +74,29 @@
     }
 
     await cargarProductos(localidad)
-    // Crear la lista (tipo comercio) en Firestore al entrar
-    if (c && localidad) {
-      const lista = await crearLista({
-        nombre:    `Lista de precios — ${c.nombre}`,
-        ocasion:   '',
-        vencimiento: null,
-        localidad,
-        tipo:      'comercio',
-        comercioId,
-      })
-      listaId = lista.id
+
+    if (listaIdExistente) {
+      // Usar lista existente — cargar sus ítems
+      listaId = listaIdExistente
+      const { getDoc, doc: firestoreDoc } = await import('firebase/firestore')
+      const { db: firestoreDb } = await import('../lib/firebase.js')
+      const snap = await getDoc(firestoreDoc(firestoreDb, 'listas', listaId))
+      if (snap.exists()) {
+        listaNombre = snap.data().nombre || ''
+      }
+    } else {
+      // Crear lista nueva (flujo legacy desde Precios.svelte)
+      if (c && localidad) {
+        const lista = await crearLista({
+          nombre:      `Lista de precios — ${c.nombre}`,
+          ocasion:     '',
+          vencimiento: null,
+          localidad,
+          tipo:        'comercio',
+          comercioId,
+        })
+        listaId = lista.id
+      }
     }
     cargando = false
   })
@@ -183,7 +197,13 @@
     }
   }
 
-  function volver() { currentPage.set('precios-comercio:' + comercioId) }
+  function volver() {
+    if (listaIdExistente) {
+      currentPage.set('gestion-listas:' + comercioId)
+    } else {
+      currentPage.set('precios-comercio:' + comercioId)
+    }
+  }
   function irPrecios() { currentPage.set('precios-comercio:' + comercioId) }
 </script>
 
