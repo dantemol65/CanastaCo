@@ -122,8 +122,9 @@ export async function initAuth() {
           const cached = loadProfileCache()
           if (cached && cached.uid === user.uid) {
             userProfile.set(cached)
-            currentPage.set('home')
+            if (verificarEstadoUsuario(cached)) currentPage.set('home')
           } else {
+            clearProfileCache()
             currentPage.set('perfil')
           }
         }
@@ -202,6 +203,8 @@ export async function saveUserProfile(data) {
   const user = get(currentUser)
   if (!user) throw new Error('Usuario no autenticado')
 
+  const perfilActual = get(userProfile)
+
   const profile = {
     uid:          user.uid,
     email:        user.email,
@@ -213,8 +216,12 @@ export async function saveUserProfile(data) {
     departamento: data.departamento,
     localidad:    data.localidad,
     barrio:       data.barrio.trim(),
-    creado:       get(userProfile)?.creado || new Date().toISOString(),
+    creado:       perfilActual?.creado || new Date().toISOString(),
     ultimoAcceso: new Date().toISOString(),
+    // Preservar rol y estado existentes — si no tiene, usar valores por defecto
+    rol:          perfilActual?.rol    || 'usuario',
+    estado:       perfilActual?.estado || 'activo',
+    reputacion:   perfilActual?.reputacion ?? 0,
   }
 
   // 1. Guardar siempre en localStorage (funciona offline)
@@ -251,11 +258,26 @@ async function _fetchProfile(uid) {
 
 async function _handleAfterLogin(user) {
   currentUser.set(user)
-  // Fijar tamaño de foto Google (evita múltiples requests a distintos tamaños)
   const fotoUrl = user.photoURL
     ? user.photoURL.replace(/=s\d+-c$/, '') + '=s96-c'
     : user.photoURL
   cachearFotoUrl(fotoUrl)
+
+  // Verificar que el token del usuario sigue siendo válido
+  // (puede estar eliminado de Auth pero con sesión cacheada en el browser)
+  try {
+    await user.getIdToken(true)  // true = forzar refresco del token
+  } catch (tokenErr) {
+    // Token inválido → usuario eliminado o sesión expirada
+    console.warn('Token inválido, forzando signOut:', tokenErr.code)
+    clearProfileCache()
+    await _signOut(auth)
+    currentUser.set(null)
+    userProfile.set(null)
+    currentPage.set('login')
+    return
+  }
+
   try {
     const profile = await _fetchProfile(user.uid)
     if (profile) {
@@ -264,14 +286,17 @@ async function _handleAfterLogin(user) {
       _updateLastAccess(user.uid)
       if (verificarEstadoUsuario(profile)) currentPage.set('home')
     } else {
+      // Usuario nuevo o perfil eliminado → limpiar caché viejo y crear perfil
+      clearProfileCache()
       currentPage.set('perfil')
     }
-  } catch {
+  } catch (err) {
     const cached = loadProfileCache()
     if (cached && cached.uid === user.uid) {
       userProfile.set(cached)
-      currentPage.set('home')
+      if (verificarEstadoUsuario(cached)) currentPage.set('home')
     } else {
+      clearProfileCache()
       currentPage.set('perfil')
     }
   }

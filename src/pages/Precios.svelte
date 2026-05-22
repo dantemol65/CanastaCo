@@ -100,6 +100,13 @@
     const c = await cargarComercio(comercioId)
     comercio = c
     if (!c) { error = 'Comercio no encontrado.'; cargando = false; return }
+
+    // Verificar que el perfil tiene localidad antes de continuar
+    if (!localidadId) {
+      error = 'Tu perfil no tiene localidad configurada. Actualizá tu perfil para continuar.'
+      cargando = false
+      return
+    }
     // Promise.allSettled: si productos falla (ej: localidad vacía),
     // los precios igual se cargan
     await Promise.allSettled([

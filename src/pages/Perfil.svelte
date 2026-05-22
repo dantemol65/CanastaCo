@@ -31,6 +31,8 @@
 
   $: restriccionActiva = $appConfig?.restriccionActiva && ($appConfig?.localidadesHabilitadas?.length > 0)
 
+  let resolviendoUbicacion = false  // true mientras resuelve provincia/depto via georef
+
   // ── Precargar perfil guardado ─────────────────────────────────────────────
   import { onMount } from 'svelte'
 
@@ -302,8 +304,8 @@
                 class:error={errors.localidad}
                 bind:value={localidadId}
                 on:change={async () => {
-                  if (!localidadId) return
-                  // Resolver provincia y departamento via API georef directa
+                  if (!localidadId) { provinciaId = ''; departamentoId = ''; return }
+                  resolviendoUbicacion = true
                   try {
                     const url = `https://apis.datos.gob.ar/georef/api/localidades?id=${localidadId}&campos=id,nombre,provincia,departamento&max=1`
                     const res  = await fetch(url)
@@ -315,6 +317,8 @@
                     }
                   } catch (e) {
                     console.error('resolverProvDepto:', e)
+                  } finally {
+                    resolviendoUbicacion = false
                   }
                 }}
               >
@@ -326,6 +330,11 @@
             {/if}
             {#if errors.localidad}
               <span class="field-error">{errors.localidad}</span>
+            {/if}
+            {#if resolviendoUbicacion}
+              <span class="resolviendo-msg">⏳ Obteniendo datos de ubicación…</span>
+            {:else if localidadId && provinciaId}
+              <span class="resolviendo-ok">✓ Ubicación resuelta</span>
             {/if}
           </div>
 
@@ -610,4 +619,7 @@
     font-size: 13px; color: var(--c-primary); line-height: 1.5;
   }
 
+
+  .resolviendo-msg { font-size: 12px; color: var(--c-text-light); margin-top: 4px; display: block; }
+  .resolviendo-ok  { font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px; display: block; }
 </style>
