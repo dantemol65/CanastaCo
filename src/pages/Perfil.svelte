@@ -117,12 +117,20 @@
     errors = {}
     if (!alias.trim() || alias.trim().length < 2)
       errors.alias = 'El alias debe tener al menos 2 caracteres.'
-    if (!provinciaId)
-      errors.provincia = 'Seleccioná tu provincia.'
-    if (!departamentoId)
-      errors.departamento = 'Seleccioná tu departamento o partido.'
-    if (!localidadId && localidades.length > 0)
-      errors.localidad = 'Seleccioná tu localidad.'
+
+    if (restriccionActiva) {
+      // En modo restringido: solo validar que eligió localidad
+      // provincia y departamento se resuelven automáticamente
+      if (!localidadId)
+        errors.localidad = 'Seleccioná tu localidad.'
+    } else {
+      if (!provinciaId)
+        errors.provincia = 'Seleccioná tu provincia.'
+      if (!departamentoId)
+        errors.departamento = 'Seleccioná tu departamento o partido.'
+      if (!localidadId && localidades.length > 0)
+        errors.localidad = 'Seleccioná tu localidad.'
+    }
     return Object.keys(errors).length === 0
   }
 
@@ -293,13 +301,20 @@
                 class="form-select"
                 class:error={errors.localidad}
                 bind:value={localidadId}
-                on:change={() => {
-                  // Auto-completar provincia y departamento desde la config
-                  const cfg = $appConfig
-                  const idx = cfg.localidadesHabilitadas?.indexOf(localidadId)
-                  if (idx >= 0 && cfg.provinciasDe?.[localidadId]) {
-                    provinciaId    = cfg.provinciasDe[localidadId]
-                    departamentoId = cfg.departamentosDe?.[localidadId] || ''
+                on:change={async () => {
+                  if (!localidadId) return
+                  // Resolver provincia y departamento via API georef directa
+                  try {
+                    const url = `https://apis.datos.gob.ar/georef/api/localidades?id=${localidadId}&campos=id,nombre,provincia,departamento&max=1`
+                    const res  = await fetch(url)
+                    const data = await res.json()
+                    const loc  = data.localidades?.[0]
+                    if (loc) {
+                      provinciaId    = String(loc.provincia?.id    || '')
+                      departamentoId = String(loc.departamento?.id || '')
+                    }
+                  } catch (e) {
+                    console.error('resolverProvDepto:', e)
                   }
                 }}
               >
