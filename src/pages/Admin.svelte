@@ -262,6 +262,26 @@
     mostrarToast(`"${nombre}" desbloqueado`)
   }
 
+  async function liberarComercio(id, nombre) {
+    if (!confirm(`¿Liberar "${nombre}"?\nEsto eliminará el dueño actual y dejará el comercio disponible para un nuevo reclamo.`)) return
+    await updateDoc(doc(db, 'comercios', id), {
+      reclamadoPor:      null,
+      reclamoAprobado:   false,
+      reclamoFecha:      null,
+      intentosFallidos:  0,
+      reclamoBloqueado:  false,
+      codigoPrivadoHash: null,
+      codigoPublico:     null,
+      estado:            'verificado',  // sigue activo pero sin dueño
+    })
+    comercios = comercios.map(c => c.id === id
+      ? { ...c, reclamadoPor: null, reclamoAprobado: false,
+          reclamoBloqueado: false, codigoPrivadoHash: null }
+      : c
+    )
+    mostrarToast(`"${nombre}" liberado — disponible para nuevo reclamo`)
+  }
+
   // ── Usuarios ──────────────────────────────────────────────────────────
   async function cargarUsuarios() {
     if (!navigator.onLine) { usuarios = []; return }
@@ -554,9 +574,14 @@
                   </p>
                 {/if}
                 {#if c.reclamadoPor}
-                  <button class="reclamador-btn" on:click={() => abrirSheetUsuario(c.reclamadoPor)}>
-                    👤 {aliasReclamador(c.reclamadoPor)}
-                  </button>
+                  <div class="reclamador-row">
+                    <button class="reclamador-btn" on:click={() => abrirSheetUsuario(c.reclamadoPor)}>
+                      👤 {aliasReclamador(c.reclamadoPor)}
+                    </button>
+                    <button class="btn-liberar" on:click={() => liberarComercio(c.id, c.nombre)} title="Liberar comercio">
+                      🔄 Liberar
+                    </button>
+                  </div>
                 {/if}
                 {#if c.creadoEn}<p class="item-fecha">{formatFecha(c.creadoEn)}</p>{/if}
                 {#if c.reclamoBloqueado}
@@ -1395,6 +1420,7 @@
   .btn-sheet-accion:disabled { opacity: 0.5; cursor: not-allowed; }
   .btn-sheet-estado          { border-color: #F59E0B; color: #92400E; }
   .btn-sheet-estado:hover    { background: #FFFBEB; }
+  .reclamador-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .reclamador-btn {
     background: none; border: none; cursor: pointer;
     font-size: 0.72rem; font-weight: 600; color: var(--c-primary);
@@ -1402,6 +1428,13 @@
     text-decoration: underline; text-underline-offset: 2px;
   }
   .reclamador-btn:hover { opacity: 0.75; }
+  .btn-liberar {
+    font-size: 0.7rem; font-weight: 700; padding: 3px 8px;
+    border-radius: var(--r-full); border: 1.5px solid #F59E0B;
+    background: #FFFBEB; color: #92400E; cursor: pointer;
+    font-family: var(--f-ui); transition: all 0.15s; white-space: nowrap;
+  }
+  .btn-liberar:hover { background: #FEF3C7; }
 
   /* Configuración */
   .section-title { font-family: var(--f-brand); font-size: 18px; margin-bottom: 14px; }
