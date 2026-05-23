@@ -133,6 +133,11 @@
   function goAdmin()    { currentPage.set('admin') }
   function goMisListas(){ currentPage.set('mis-listas') }
 
+  // ── FAB expandible ────────────────────────────────────────────────────────
+  let fabAbierto = false
+  function toggleFab()    { fabAbierto = !fabAbierto }
+  function irSugerencias(){ fabAbierto = false; currentPage.set('sugerencias') }
+
   // ── Mount ─────────────────────────────────────────────────────────────────
   onMount(() => {
     checkConexion()
@@ -395,6 +400,35 @@
   </div>
 
   <!-- Bottom Navigation -->
+  <!-- FAB expandible -->
+  <div class="fab-wrap" class:fab-open={fabAbierto}>
+    <div class="fab-opciones" aria-hidden={!fabAbierto}>
+      <button class="fab-opcion" on:click={irSugerencias} tabindex={fabAbierto ? 0 : -1}>
+        <span class="fab-opcion-label">Sugerencias</span>
+        <div class="fab-opcion-icono">💡</div>
+      </button>
+    </div>
+    <button
+      class="fab-principal"
+      on:click={toggleFab}
+      aria-label={fabAbierto ? 'Cerrar' : 'Más opciones'}
+      aria-expanded={fabAbierto}
+    >
+      <svg
+        width="22" height="22" viewBox="0 0 24 24"
+        fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round"
+        style="transform: rotate({fabAbierto ? 45 : 0}deg); transition: transform 0.25s ease"
+      >
+        <line x1="12" y1="5" x2="12" y2="19"/>
+        <line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+    </button>
+  </div>
+
+  {#if fabAbierto}
+    <div class="fab-overlay" on:click={toggleFab} role="presentation"></div>
+  {/if}
+
   <BottomNav active="home" />
 
 </div>
@@ -793,6 +827,60 @@
     min-width: 16px; height: 16px; border-radius: 8px;
     padding: 0 4px; display: flex; align-items: center;
     justify-content: center; font-family: var(--f-ui);
+  }
+
+
+  /* ── FAB expandible ─────────────────────────────────────────────── */
+  .fab-wrap {
+    position: fixed;
+    bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
+    right: 20px;
+    display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+    z-index: 100;
+  }
+  .fab-principal {
+    width: 52px; height: 52px; border-radius: 50%;
+    background: var(--c-primary); border: none;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--s-lg); cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background 0.2s, transform 0.15s;
+    flex-shrink: 0;
+  }
+  .fab-principal:active { transform: scale(0.93); }
+  .fab-open .fab-principal { background: #333; }
+
+  .fab-opciones {
+    display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
+    pointer-events: none; opacity: 0;
+    transform: translateY(8px) scale(0.95);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+  }
+  .fab-open .fab-opciones {
+    pointer-events: auto; opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  .fab-opcion {
+    display: flex; align-items: center; gap: 10px;
+    background: none; border: none; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .fab-opcion-label {
+    background: var(--c-surface); color: var(--c-text);
+    font-size: 13px; font-weight: 700; padding: 6px 14px;
+    border-radius: var(--r-full); box-shadow: var(--s-sm);
+    white-space: nowrap; font-family: var(--f-ui);
+    border: 1px solid var(--c-border);
+  }
+  .fab-opcion-icono {
+    width: 42px; height: 42px; border-radius: 50%;
+    background: var(--c-surface); box-shadow: var(--s-sm);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; border: 1px solid var(--c-border); flex-shrink: 0;
+  }
+  .fab-overlay {
+    position: fixed; inset: 0; z-index: 99;
+    background: rgba(0,0,0,0.15);
   }
 
 </style>

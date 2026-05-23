@@ -23,49 +23,48 @@
   import Sugerencias      from './pages/Sugerencias.svelte'
   import { cargarConfig }  from './stores/config.js'
 
-  let mostrarConfirmSalir = false
+  let mostrarAvisoSalir = false
+  let timerAvisoSalir   = null
 
   onMount(() => {
     initAuth()
     cargarConfig()
 
-    // Técnica para interceptar back en Android PWA:
-    // 1. Reemplazar el estado actual con uno nuestro
-    // 2. Agregar una entrada extra encima
-    // Así cuando el usuario presiona back, baja a nuestro estado base
-    // y podemos detectarlo sin cerrar la app
     history.replaceState({ canastaco: 'base' }, '')
     history.pushState({ canastaco: 'top' }, '')
 
     const onPopState = (e) => {
-      // El usuario presionó back — siempre volver a agregar la entrada
-      // para que el próximo back también sea interceptado
       if (e.state?.canastaco === 'base' || !e.state?.canastaco) {
         const pagina = $currentPage
 
         if (pagina === 'home' || pagina === 'login' || pagina === 'bloqueado') {
-          // Estamos en la pantalla raíz → mostrar confirmación de salida
-          mostrarConfirmSalir = true
-        }
+          if (mostrarAvisoSalir) {
+            // Segundo back con aviso visible → cerrar la app
+            // No re-agregamos la entrada → el browser cierra la PWA
+            return
+          }
+          // Primer back en pantalla raíz → mostrar aviso y re-agregar entrada
+          mostrarAvisoSalir = true
+          history.pushState({ canastaco: 'top' }, '')
 
-        // Siempre re-agregar la entrada top para seguir interceptando
-        history.pushState({ canastaco: 'top' }, '')
+          // Auto-ocultar el aviso después de 3 segundos
+          clearTimeout(timerAvisoSalir)
+          timerAvisoSalir = setTimeout(() => {
+            mostrarAvisoSalir = false
+          }, 3000)
+        } else {
+          // En otra pantalla → re-agregar entrada (cada pantalla tiene su propio volver)
+          history.pushState({ canastaco: 'top' }, '')
+        }
       }
     }
 
     window.addEventListener('popstate', onPopState)
-    return () => window.removeEventListener('popstate', onPopState)
+    return () => {
+      window.removeEventListener('popstate', onPopState)
+      clearTimeout(timerAvisoSalir)
+    }
   })
-
-  function confirmarSalir() {
-    mostrarConfirmSalir = false
-    // Ir al estado base y luego atrás para cerrar la PWA
-    history.go(-2)
-  }
-
-  function cancelarSalir() {
-    mostrarConfirmSalir = false
-  }
 
   // Extraer id de rutas con parámetros (ej: 'detalle-comercio:abc123')
   $: [basePage, pageParam] = ($currentPage || '').split(':')
@@ -148,20 +147,9 @@
 {/if}
 
 <!-- Dialog de confirmación de salida -->
-{#if mostrarConfirmSalir}
-  <div class="salir-overlay" role="presentation" on:click={cancelarSalir}></div>
-  <div class="salir-dialog" role="alertdialog" aria-modal="true">
-    <div class="salir-icon">👋</div>
-    <h2 class="salir-titulo">¿Salir de Canasta.co?</h2>
-    <p class="salir-msg">¿Querés cerrar la aplicación?</p>
-    <div class="salir-btns">
-      <button class="salir-btn salir-cancelar" on:click={cancelarSalir}>
-        Cancelar
-      </button>
-      <button class="salir-btn salir-confirmar" on:click={confirmarSalir}>
-        Salir
-      </button>
-    </div>
+{#if mostrarAvisoSalir}
+  <div class="salir-toast" role="status">
+    Presioná de nuevo para salir
   </div>
 {/if}
 
@@ -177,43 +165,20 @@
     gap: 24px;
   }
 
-  /* ── Dialog confirmar salida ── */
-  .salir-overlay {
-    position: fixed; inset: 0; z-index: 300;
-    background: rgba(0,0,0,0.5);
-    animation: fadeIn 0.15s ease;
+  /* ── Toast salir ── */
+  .salir-toast {
+    position: fixed; bottom: 80px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.85); color: white;
+    padding: 12px 24px; border-radius: var(--r-full);
+    font-size: 14px; font-weight: 600;
+    z-index: 300; white-space: nowrap;
+    box-shadow: var(--s-lg);
+    animation: fadeInUp 0.2s ease;
   }
-  .salir-dialog {
-    position: fixed; z-index: 301;
-    bottom: 0; left: 50%; transform: translateX(-50%);
-    width: min(420px, 100vw);
-    background: var(--c-surface); border-radius: 24px 24px 0 0;
-    padding: 28px 24px 40px;
-    text-align: center;
-    box-shadow: 0 -4px 32px rgba(0,0,0,0.18);
-    animation: slideUp 0.2s ease;
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
-  @keyframes slideUp {
-    from { transform: translateX(-50%) translateY(100%); }
-    to   { transform: translateX(-50%) translateY(0); }
-  }
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-  .salir-icon   { font-size: 44px; margin-bottom: 12px; }
-  .salir-titulo { font-family: var(--f-brand); font-size: 20px; color: var(--c-text); margin-bottom: 8px; }
-  .salir-msg    { font-size: 14px; color: var(--c-text-light); margin-bottom: 24px; }
-
-  .salir-btns {
-    display: flex; gap: 12px;
-  }
-  .salir-btn {
-    flex: 1; padding: 14px; border-radius: var(--r-xl);
-    font-size: 15px; font-weight: 700; cursor: pointer;
-    font-family: var(--f-ui); border: none;
-    transition: opacity 0.15s; -webkit-tap-highlight-color: transparent;
-  }
-  .salir-btn:active { opacity: 0.8; }
-  .salir-cancelar { background: var(--c-surface-2); color: var(--c-text); }
-  .salir-confirmar { background: var(--c-primary); color: white; }
 
 </style>
