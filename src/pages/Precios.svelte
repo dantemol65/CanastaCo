@@ -588,6 +588,9 @@
                 <div class="precio-top">
                   <div class="precio-producto">
                     <span class="precio-nombre">{precio.productoNombre}</span>
+                    {#if precio.productoMarca}
+                      <span class="precio-marca">{precio.productoMarca}</span>
+                    {/if}
                     {#if precio.productoUnidad && precio.productoUnidad !== 'u'}
                       <span class="precio-unidad">× {precio.productoUnidad}</span>
                     {/if}
@@ -1079,6 +1082,7 @@
   .precio-producto { flex: 1; min-width: 0; }
   .precio-nombre { font-weight: 700; font-size: 15px; color: var(--c-text); display: block; }
   .precio-unidad { font-size: 11px; color: var(--c-text-light); }
+  .precio-marca  { font-size: 11px; color: var(--c-text-light); font-style: italic; display: block; margin-top: 1px; }
   .precio-valor { font-family: var(--f-brand); font-size: 20px; font-weight: 700; color: var(--c-primary); white-space: nowrap; }
 
   .precio-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }

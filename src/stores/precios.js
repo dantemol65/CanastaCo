@@ -284,7 +284,7 @@ export async function cargarPreciosProducto(productoId, localidadId) {
  */
 export async function registrarPrecio({
   comercioId, comercioNombre, comercioDireccion = '', localidad,
-  productoId, productoNombre, productoUnidad, productoCategoria,
+  productoId, productoNombre, productoMarca = '', productoUnidad, productoCategoria,
   precio, esOferta = false, vencimiento = null, listaId = null
 }) {
   const user = get(currentUser)
@@ -318,6 +318,7 @@ export async function registrarPrecio({
     localidad,
     productoId,
     productoNombre,
+    productoMarca:       productoMarca  || '',
     productoUnidad:      productoUnidad || 'u',
     productoCategoria:   productoCategoria || 'otros',
     precio:              parseFloat(precio),

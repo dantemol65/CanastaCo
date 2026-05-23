@@ -152,6 +152,7 @@
         localidad,
         productoId:        productoSel.id,
         productoNombre:    productoSel.nombre,
+        productoMarca:     productoSel.marca   || '',
         productoUnidad:    productoSel.unidad,
         productoCategoria: productoSel.categoria,
         precio:            precioValor,
@@ -164,6 +165,7 @@
         precioId:          nuevo.id,
         productoId:        productoSel.id,
         productoNombre:    productoSel.nombre,
+        productoMarca:     productoSel.marca   || '',
         productoUnidad:    productoSel.unidad,
         productoCategoria: productoSel.categoria,
         precio:            parseFloat(precioValor),
@@ -362,6 +364,9 @@
             <div class="item-row">
               <span class="item-emoji">{catEmoji(item.productoCategoria)}</span>
               <span class="item-nombre">{item.productoNombre}</span>
+              {#if item.productoMarca}
+                <span class="item-marca">{item.productoMarca}</span>
+              {/if}
               {#if item.esOferta}<span class="item-oferta-chip">🔥</span>{/if}
               <span class="item-precio">{formatPrecio(item.precio)}</span>
               <button class="btn-eliminar" on:click={() => eliminarItem(idx)} aria-label="Eliminar">✕</button>
@@ -500,4 +505,6 @@
   }
   .toast.toast-err { background: var(--c-error); }
   @keyframes fadeIn { from{opacity:0;transform:translateX(-50%) translateY(-6px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+
+  .item-marca { font-size: 11px; color: var(--c-text-light); font-style: italic; display: block; }
 </style>
