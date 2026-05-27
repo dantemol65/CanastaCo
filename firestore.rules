@@ -15,6 +15,25 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ── Configuración global ──────────────────────────────────────────────
+    // Lectura pública: todos los usuarios necesitan leer config/app
+    // para saber si la restricción de localidades está activa.
+    match /config/{docId} {
+      allow read:   if true;
+      allow write:  if esAdmin();
+    }
+
+    // ── Índice de alias únicos ────────────────────────────────────────────
+    // La clave del documento es el alias normalizado (minúsculas, sin espacios).
+    // Lectura pública: necesaria para el check de disponibilidad desde el cliente.
+    // Escritura: el propio usuario (al guardar su perfil) o el admin (para migración).
+    match /alias_index/{alias} {
+      allow read:   if true;
+      allow create: if esAuth() && (request.resource.data.uid == request.auth.uid || esAdmin());
+      allow update: if esAuth() && (resource.data.uid == request.auth.uid || esAdmin());
+      allow delete: if esAuth() && (resource.data.uid == request.auth.uid || esAdmin());
+    }
+
     // ── Comercios ─────────────────────────────────────────────────────────
     match /comercios/{id} {
       allow read:   if true;
@@ -82,13 +101,9 @@ service cloud.firestore {
 
     // ── Solicitudes de productos a la comunidad ───────────────────────────
     match /solicitudes_productos/{id} {
-      // Cualquier usuario autenticado puede leer (para verlas en Buscar)
       allow read:   if esAuth();
-      // Cualquier usuario puede crear una solicitud
       allow create: if esAuth()
         && request.resource.data.solicitadoPor == request.auth.uid;
-      // Cualquiera puede sumar voto (solo campos votos y votantes)
-      // o el admin puede marcarla como cubierta
       allow update: if esAuth() && (
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['votos', 'votantes'])
@@ -99,7 +114,7 @@ service cloud.firestore {
       allow delete: if esAdmin();
     }
 
-    // ── Sugerencias ───────────────────────────────────────────────────────────
+    // ── Sugerencias ───────────────────────────────────────────────────────
     match /sugerencias/{id} {
       allow read:   if esAdmin();
       allow create: if esAuth();

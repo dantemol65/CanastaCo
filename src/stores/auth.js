@@ -1,7 +1,10 @@
 // stores/auth.js
 import { writable, get } from 'svelte/store'
 import { onAuthStateChanged, signOut as _signOut } from 'firebase/auth'
-import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore'
+import {
+  doc, getDoc, setDoc, updateDoc, serverTimestamp, runTransaction,
+  collection, query, where, limit, getDocs
+} from 'firebase/firestore'
 import { auth, db, googleSignInPopup, googleSignInRedirect, getGoogleRedirectResult, emailSignIn } from '../lib/firebase.js'
 import { cachearFotoUrl, cargarFotoCacheada, limpiarFotoCache } from '../lib/fotocache.js'
 import { detenerListenerNotificaciones } from './notificaciones.js'
@@ -9,13 +12,13 @@ import { detenerListenerNotificaciones } from './notificaciones.js'
 const CACHE_KEY   = 'canastaco_profile'
 const PENDING_KEY = 'canastaco_pending_profile'
 
-export const currentPage    = writable('loading')
-export const currentUser    = writable(null)
-export const userProfile    = writable(null)
-export const authError      = writable(null)
-export const pendingSync    = writable(false)  // true si hay cambios sin sincronizar
-export const usuarioBloqueado   = writable(false)
-export const usuarioSuspendido  = writable(false)
+export const currentPage       = writable('loading')
+export const currentUser       = writable(null)
+export const userProfile       = writable(null)
+export const authError         = writable(null)
+export const pendingSync       = writable(false)
+export const usuarioBloqueado  = writable(false)
+export const usuarioSuspendido = writable(false)
 
 // ── Cache local ───────────────────────────────────────────────────────────
 
@@ -27,7 +30,6 @@ function loadProfileCache() {
     const p = JSON.parse(localStorage.getItem(CACHE_KEY))
     if (!p) return null
     // Migración: IDs viejos (AR-A) → nuevo sistema georef (numérico)
-    // Si el ID de provincia empieza con 'AR-', el perfil es del sistema viejo → descartar
     if (p.provincia && p.provincia.startsWith('AR-')) {
       localStorage.removeItem(CACHE_KEY)
       localStorage.removeItem(PENDING_KEY)
@@ -62,7 +64,6 @@ function verificarEstadoUsuario(profile) {
   if (estado === 'suspendido') {
     usuarioSuspendido.set(true)
     usuarioBloqueado.set(false)
-    // Suspendido puede ver pero no actuar — se muestra aviso en Home
     return true
   }
   usuarioBloqueado.set(false)
@@ -103,7 +104,6 @@ export async function initAuth() {
     if (user) {
       currentUser.set(user)
 
-      // Si hay cambios pendientes, intentar sincronizar ahora
       const pending = loadPending()
       if (pending) {
         pendingSync.set(true)
@@ -118,7 +118,6 @@ export async function initAuth() {
           _updateLastAccess(user.uid)
           if (verificarEstadoUsuario(profile)) currentPage.set('home')
         } else {
-          // Puede haber perfil en caché (guardado offline)
           const cached = loadProfileCache()
           if (cached && cached.uid === user.uid) {
             userProfile.set(cached)
@@ -129,7 +128,6 @@ export async function initAuth() {
           }
         }
       } catch {
-        // Sin conexión: usar caché local
         const cached = loadProfileCache()
         if (cached && cached.uid === user.uid) {
           userProfile.set(cached)
@@ -197,6 +195,49 @@ export async function signOut() {
   currentPage.set('login')
 }
 
+// ── Alias — unicidad ──────────────────────────────────────────────────────
+
+/**
+ * Normaliza el alias para usarlo como clave en alias_index.
+ * Minúsculas, sin espacios al inicio/fin, espacios internos → guión bajo.
+ */
+export function normalizarAlias(alias) {
+  return alias.trim().toLowerCase().replace(/\s+/g, '_')
+}
+
+/**
+ * Verifica si un alias está disponible para el usuario actual.
+ * Devuelve true si está libre o si ya pertenece al mismo UID.
+ * Devuelve false si está tomado por otro usuario.
+ * Devuelve null si no se puede determinar (sin conexión).
+ *
+ * Estrategia de doble consulta:
+ *  1. Busca en alias_index (índice mantenido por saveUserProfile).
+ *  2. Si no está en el índice (usuarios pre-migración), busca en usuarios directamente.
+ */
+export async function verificarAliasDisponible(alias, uidActual) {
+  if (!alias?.trim()) return null
+  const clave = normalizarAlias(alias)
+  try {
+    // 1. Consultar el índice
+    const snapIdx = await getDoc(doc(db, 'alias_index', clave))
+    if (snapIdx.exists()) {
+      return snapIdx.data().uid === uidActual
+    }
+
+    // 2. Fallback: buscar en la colección usuarios
+    // Cubre a los usuarios registrados antes de que existiera alias_index
+    const q    = query(collection(db, 'usuarios'), where('alias', '==', alias.trim()), limit(1))
+    const snap = await getDocs(q)
+    if (snap.empty) return true
+    return snap.docs[0].data().uid === uidActual
+
+  } catch {
+    // Sin conexión: no podemos verificar — la transacción en saveUserProfile lo atrapará
+    return null
+  }
+}
+
 // ── Perfil ────────────────────────────────────────────────────────────────
 
 export async function saveUserProfile(data) {
@@ -204,6 +245,11 @@ export async function saveUserProfile(data) {
   if (!user) throw new Error('Usuario no autenticado')
 
   const perfilActual = get(userProfile)
+  const nuevoAlias   = data.alias.trim()
+  const claveNueva   = normalizarAlias(nuevoAlias)
+  const claveVieja   = perfilActual?.alias
+    ? normalizarAlias(perfilActual.alias)
+    : null
 
   const profile = {
     uid:          user.uid,
@@ -211,14 +257,13 @@ export async function saveUserProfile(data) {
     foto:         data.foto || (user.photoURL
                     ? user.photoURL.replace(/=s\d+-c$/, '') + '=s96-c'
                     : '') || '',
-    alias:        data.alias.trim(),
+    alias:        nuevoAlias,
     provincia:    data.provincia,
     departamento: data.departamento,
     localidad:    data.localidad,
     barrio:       data.barrio.trim(),
     creado:       perfilActual?.creado || new Date().toISOString(),
     ultimoAcceso: new Date().toISOString(),
-    // Preservar rol y estado existentes — si no tiene, usar valores por defecto
     rol:          perfilActual?.rol    || 'usuario',
     estado:       perfilActual?.estado || 'activo',
     reputacion:   perfilActual?.reputacion ?? 0,
@@ -228,22 +273,49 @@ export async function saveUserProfile(data) {
   saveProfileCache(profile)
   userProfile.set(profile)
 
-  // 2. Intentar sincronizar con Firestore solo si hay conexión
+  // 2. Sin conexión: guardar pendiente y salir
   if (!navigator.onLine) {
     savePending(profile)
     pendingSync.set(true)
-  } else {
-    try {
-      await setDoc(doc(db, 'usuarios', user.uid), {
-        ...profile,
-        ultimoAcceso: serverTimestamp(),
+    currentPage.set('home')
+    return
+  }
+
+  // 3. Con conexión: transacción atómica para garantizar unicidad del alias
+  const refPerfil   = doc(db, 'usuarios',    user.uid)
+  const refAliasNew = doc(db, 'alias_index', claveNueva)
+  const refAliasOld = (claveVieja && claveVieja !== claveNueva)
+    ? doc(db, 'alias_index', claveVieja)
+    : null
+
+  try {
+    await runTransaction(db, async (tx) => {
+      // Verificar que el alias nuevo no esté tomado por otro usuario
+      const snapAlias = await tx.get(refAliasNew)
+      if (snapAlias.exists() && snapAlias.data().uid !== user.uid) {
+        throw new Error('El alias ya está en uso. Elegí otro.')
+      }
+
+      // Liberar el alias anterior si el usuario lo cambió
+      if (refAliasOld) tx.delete(refAliasOld)
+
+      // Reservar el alias nuevo en el índice
+      tx.set(refAliasNew, {
+        uid:           user.uid,
+        alias:         nuevoAlias,
+        actualizadoEn: new Date().toISOString(),
       })
-      clearPending()
-      pendingSync.set(false)
-    } catch {
-      savePending(profile)
-      pendingSync.set(true)
-    }
+
+      // Escribir el perfil del usuario
+      tx.set(refPerfil, { ...profile, ultimoAcceso: serverTimestamp() })
+    })
+
+    clearPending()
+    pendingSync.set(false)
+  } catch (err) {
+    // Revertir el optimistic update en el store si la transacción falló
+    if (perfilActual) userProfile.set(perfilActual)
+    throw err
   }
 
   currentPage.set('home')
@@ -263,12 +335,9 @@ async function _handleAfterLogin(user) {
     : user.photoURL
   cachearFotoUrl(fotoUrl)
 
-  // Verificar que el token del usuario sigue siendo válido
-  // (puede estar eliminado de Auth pero con sesión cacheada en el browser)
   try {
-    await user.getIdToken(true)  // true = forzar refresco del token
+    await user.getIdToken(true)
   } catch (tokenErr) {
-    // Token inválido → usuario eliminado o sesión expirada
     console.warn('Token inválido, forzando signOut:', tokenErr.code)
     clearProfileCache()
     await _signOut(auth)
@@ -286,7 +355,6 @@ async function _handleAfterLogin(user) {
       _updateLastAccess(user.uid)
       if (verificarEstadoUsuario(profile)) currentPage.set('home')
     } else {
-      // Usuario nuevo o perfil eliminado → limpiar caché viejo y crear perfil
       clearProfileCache()
       currentPage.set('perfil')
     }

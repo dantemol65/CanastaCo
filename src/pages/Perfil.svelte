@@ -1,5 +1,7 @@
 <script>
-  import { currentUser, userProfile, currentPage, saveUserProfile, signOut } from '../stores/auth.js'
+  import { onMount } from 'svelte'
+  import { get } from 'svelte/store'
+  import { currentUser, userProfile, currentPage, saveUserProfile, signOut, verificarAliasDisponible } from '../stores/auth.js'
   import { cargarFotoCacheada } from '../lib/fotocache.js'
   import { provincias, getDepartamentos, getLocalidades, getNombreProvincia, resolverNombresLocalidad } from '../lib/georef.js'
   import { appConfig, cargarConfig, getLocalidadesHabilitadas } from '../stores/config.js'
@@ -13,34 +15,39 @@
   let barrio         = ''
   let fotoCustom     = ''
 
-  let saving        = false
-  let errors        = {}
-  let loaded        = false
+  let saving  = false
+  let errors  = {}
+
+  // ── Alias — unicidad ──────────────────────────────────────────────────────
+  let aliasDisponible  = null   // null=sin verificar | true=libre | false=ocupado
+  let verificandoAlias = false
 
   // ── Listas dinámicas ──────────────────────────────────────────────────────
-  let departamentos     = []
-  let localidades       = []
-  let loadingDepts      = false
-  let loadingLocs       = false
-  let errorDepts        = false
-  let errorLocs         = false
+  let departamentos = []
+  let localidades   = []
+  let loadingDepts  = false
+  let loadingLocs   = false
+  let errorDepts    = false
+  let errorLocs     = false
 
   // ── Restricción de localidades ────────────────────────────────────────────
-  let localidadesRestricc   = []    // localidades habilitadas con nombre resuelto
-  let cargandoRestricc      = false
+  let localidadesRestricc  = []
+  let cargandoRestricc     = false
+  let resolviendoUbicacion = false
 
   $: restriccionActiva = $appConfig?.restriccionActiva && ($appConfig?.localidadesHabilitadas?.length > 0)
 
-  let resolviendoUbicacion = false  // true mientras resuelve provincia/depto via georef
+  // ── Nombre legible de la localidad actual (para sugerencias de alias) ─────
+  $: nombreLocalidadActual = (() => {
+    if (!localidadId) return ''
+    if (restriccionActiva) return localidadesRestricc.find(l => l.id === localidadId)?.label || ''
+    return localidades.find(l => l.id === localidadId)?.nombre || ''
+  })()
 
   // ── Precargar perfil guardado ─────────────────────────────────────────────
-  import { onMount } from 'svelte'
-
   onMount(async () => {
-    // Cargar config global si no está cargada
     if (!$appConfig) await cargarConfig()
 
-    // Si hay restricción, resolver nombres de las localidades habilitadas
     if ($appConfig?.restriccionActiva && $appConfig?.localidadesHabilitadas?.length > 0) {
       cargandoRestricc = true
       const ids = $appConfig.localidadesHabilitadas
@@ -52,8 +59,7 @@
       cargandoRestricc = false
     }
 
-    if ($userProfile && !loaded) {
-      loaded         = true
+    if ($userProfile) {
       alias          = $userProfile.alias  || ''
       barrio         = $userProfile.barrio || ''
       provinciaId    = $userProfile.provincia    || ''
@@ -64,7 +70,56 @@
     }
   })
 
-  // ── Cascading: el usuario cambia provincia ────────────────────────────────
+  // ── Check de alias al abandonar el input ─────────────────────────────────
+  async function onAliasBlur() {
+    const limpio = alias?.trim() || ''
+
+    aliasDisponible = null
+
+    if (limpio.length < 2) return
+
+    // Si no cambió respecto al perfil guardado, no consultar Firestore
+    if (limpio === get(userProfile)?.alias?.trim()) {
+      aliasDisponible = true
+      return
+    }
+
+    verificandoAlias = true
+    try {
+      aliasDisponible = await verificarAliasDisponible(limpio, get(currentUser)?.uid)
+    } catch {
+      aliasDisponible = null
+    } finally {
+      verificandoAlias = false
+    }
+  }
+
+  // ── Sugerencias cuando el alias está ocupado ──────────────────────────────
+  $: sugerenciasAlias = aliasDisponible === false
+    ? generarSugerencias(alias, nombreLocalidadActual)
+    : []
+
+  function generarSugerencias(base, localidad) {
+    const b = (base || '').trim()
+    if (!b) return []
+    // Nombre corto de localidad: primer token antes de espacios o comas
+    const locCorta = localidad
+      ? localidad.split(/[\s,]/)[0]
+      : ''
+    const sugs = [
+      `${b}_`,
+      `${b}2`,
+    ]
+    if (locCorta) sugs.push(`${b}_${locCorta}`)
+    return sugs
+  }
+
+  function usarSugerencia(sug) {
+    alias = sug
+    onAliasBlur()   // blur no dispara al hacer clic en un botón externo
+  }
+
+  // ── Cascading geográfico ──────────────────────────────────────────────────
   async function onProvinciaChange() {
     departamentoId = ''
     localidadId    = ''
@@ -114,15 +169,17 @@
     alias = nombre.split(' ')[0]
   }
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  // ── Validación ────────────────────────────────────────────────────────────
   function validate() {
     errors = {}
+
     if (!alias.trim() || alias.trim().length < 2)
       errors.alias = 'El alias debe tener al menos 2 caracteres.'
 
+    if (aliasDisponible === false)
+      errors.alias = 'Este alias ya está en uso. Elegí otro.'
+
     if (restriccionActiva) {
-      // En modo restringido: solo validar que eligió localidad
-      // provincia y departamento se resuelven automáticamente
       if (!localidadId)
         errors.localidad = 'Seleccioná tu localidad.'
     } else {
@@ -138,9 +195,8 @@
 
   // ── Submit ────────────────────────────────────────────────────────────────
 
-  // Detecta si el usuario modificó algún campo respecto al perfil guardado
   function hasChanges() {
-    if (!$userProfile) return true  // perfil nuevo → siempre guardar
+    if (!$userProfile) return true
     return (
       alias          !== ($userProfile.alias          || '') ||
       provinciaId    !== ($userProfile.provincia       || '') ||
@@ -153,7 +209,6 @@
   async function handleSubmit() {
     if (!validate() || saving) return
 
-    // Si el perfil ya existe y no hay cambios, volver al home directo
     if ($userProfile && !hasChanges()) {
       currentPage.set('home')
       return
@@ -163,14 +218,20 @@
     try {
       await saveUserProfile({
         alias,
-        foto: fotoCustom || fotoGoogle,
-        provincia: provinciaId,
+        foto:        fotoCustom || fotoGoogle,
+        provincia:   provinciaId,
         departamento: departamentoId,
-        localidad: localidadId,
+        localidad:   localidadId,
         barrio,
       })
     } catch (e) {
-      errors.general = 'No se pudo guardar el perfil. Verificá tu conexión.'
+      // El error de alias duplicado viene de la transacción en auth.js
+      if (e.message?.includes('alias')) {
+        errors.alias   = e.message
+        aliasDisponible = false
+      } else {
+        errors.general = 'No se pudo guardar el perfil. Verificá tu conexión.'
+      }
       saving = false
     }
   }
@@ -179,7 +240,7 @@
     await signOut()
   }
 
-  // ── Helpers ───────────────────────────────────────────────────────────────
+  // ── Helpers de nombre ─────────────────────────────────────────────────────
   function nombreLocalidad(id) {
     return localidades.find(l => l.id === id)?.nombre || ''
   }
@@ -244,25 +305,59 @@
           <div class="alert alert-error mb-16">{errors.general}</div>
         {/if}
 
-        <!-- Alias -->
+        <!-- ── Alias ── -->
         <div class="form-group" class:has-error={errors.alias}>
           <label class="form-label" for="alias">Alias público</label>
-          <input
-            id="alias"
-            type="text"
-            class="form-input"
-            class:error={errors.alias}
-            bind:value={alias}
-            placeholder="Ej: JuanDelBarrio"
-            maxlength="30"
-            autocomplete="off"
-            autocorrect="off"
-            spellcheck="false"
-          />
+          <div class="alias-input-wrap">
+            <input
+              id="alias"
+              type="text"
+              class="form-input"
+              class:error={errors.alias}
+              bind:value={alias}
+              placeholder="Ej: JuanDelBarrio"
+              maxlength="30"
+              autocomplete="off"
+              autocorrect="off"
+              spellcheck="false"
+              on:input={() => aliasDisponible = null}
+              on:blur={onAliasBlur}
+            />
+            <!-- Indicador de disponibilidad -->
+            {#if verificandoAlias}
+              <span class="alias-status checking" title="Verificando…">⏳</span>
+            {:else if aliasDisponible === true && alias.trim() !== ($userProfile?.alias || '')}
+              <span class="alias-status ok" title="Alias disponible">✓</span>
+            {:else if aliasDisponible === false}
+              <span class="alias-status taken" title="Alias ocupado">✕</span>
+            {/if}
+          </div>
+
+          <!-- Mensaje debajo del input -->
           {#if errors.alias}
             <span class="field-error">{errors.alias}</span>
+          {:else if aliasDisponible === false}
+            <span class="field-error">Este alias ya está en uso. Elegí otro.</span>
+          {:else if aliasDisponible === true && alias.trim() !== ($userProfile?.alias || '')}
+            <span class="alias-ok-msg">✓ Alias disponible</span>
           {:else}
             <span class="form-hint">Así te van a ver los demás usuarios.</span>
+          {/if}
+
+          <!-- Sugerencias cuando el alias está tomado -->
+          {#if sugerenciasAlias.length > 0}
+            <div class="alias-sugerencias">
+              <span class="sug-label">Probá con:</span>
+              {#each sugerenciasAlias as sug}
+                <button
+                  type="button"
+                  class="sug-chip"
+                  on:click={() => usarSugerencia(sug)}
+                >
+                  {sug}
+                </button>
+              {/each}
+            </div>
           {/if}
         </div>
 
@@ -307,7 +402,7 @@
                   if (!localidadId) { provinciaId = ''; departamentoId = ''; return }
                   resolviendoUbicacion = true
                   try {
-                    const url = `https://apis.datos.gob.ar/georef/api/localidades?id=${localidadId}&campos=id,nombre,provincia,departamento&max=1`
+                    const url  = `https://apis.datos.gob.ar/georef/api/localidades?id=${localidadId}&campos=id,nombre,provincia,departamento&max=1`
                     const res  = await fetch(url)
                     const data = await res.json()
                     const loc  = data.localidades?.[0]
@@ -340,7 +435,6 @@
 
         {:else}
           <!-- Modo normal: selectores en cascada provincia → departamento → localidad -->
-          <!-- Provincia -->
           <div class="form-group" class:has-error={errors.provincia}>
             <label class="form-label" for="provincia">Provincia</label>
             <select id="provincia" class="form-select" class:error={errors.provincia}
@@ -431,9 +525,13 @@
               <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
             </svg>
             <span>
-              {nombreLocalidad(localidadId)},
-              {nombreDepartamento(departamentoId)},
-              {nombreProvincia(provinciaId)}
+              {#if restriccionActiva}
+                {nombreLocalidadActual}{provinciaId ? ', ' + getNombreProvincia(provinciaId) : ''}
+              {:else}
+                {nombreLocalidad(localidadId)},
+                {nombreDepartamento(departamentoId)},
+                {nombreProvincia(provinciaId)}
+              {/if}
               {#if barrio} — {barrio}{/if}
             </span>
           </div>
@@ -445,7 +543,7 @@
       <button
         class="btn btn-primary btn-full submit-btn"
         on:click={handleSubmit}
-        disabled={saving}
+        disabled={saving || aliasDisponible === false}
       >
         {#if saving}
           <div class="btn-spinner-w"></div>
@@ -521,10 +619,7 @@
     padding: 24px 6px 20px;
   }
 
-  .avatar-wrap {
-    position: relative; flex-shrink: 0;
-  }
-
+  .avatar-wrap { position: relative; flex-shrink: 0; }
   .avatar-lg { width: 88px; height: 88px; box-shadow: var(--s-md); }
 
   .avatar-placeholder {
@@ -612,14 +707,70 @@
     animation: spin 0.7s linear infinite;
   }
 
-  /* Restricción de localidades */
+  /* ── Alias — unicidad ── */
+  .alias-input-wrap {
+    position: relative;
+  }
+
+  .alias-status {
+    position: absolute;
+    right: 14px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 14px; font-weight: 700;
+    pointer-events: none;
+  }
+  .alias-status.ok      { color: #059669; }
+  .alias-status.taken   { color: var(--c-error); }
+  .alias-status.checking { color: var(--c-text-light); font-size: 12px; }
+
+  .alias-ok-msg {
+    font-size: 12px; color: #059669; font-weight: 600;
+  }
+
+  .alias-sugerencias {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 8px;
+  }
+
+  .sug-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--c-text-light);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+  }
+
+  .sug-chip {
+    padding: 5px 12px;
+    border: 1.5px solid var(--c-primary);
+    border-radius: var(--r-full);
+    background: transparent;
+    color: var(--c-primary);
+    font-family: var(--f-ui);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sug-chip:hover, .sug-chip:active {
+    background: var(--c-primary);
+    color: white;
+  }
+
+  /* ── Restricción de localidades ── */
   .restricc-banner {
     background: rgba(27,107,58,0.08); border: 1px solid rgba(27,107,58,0.25);
     border-radius: var(--r-lg); padding: 12px 14px;
     font-size: 13px; color: var(--c-primary); line-height: 1.5;
   }
 
-
   .resolviendo-msg { font-size: 12px; color: var(--c-text-light); margin-top: 4px; display: block; }
   .resolviendo-ok  { font-size: 12px; color: #059669; font-weight: 600; margin-top: 4px; display: block; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>

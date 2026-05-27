@@ -2,8 +2,9 @@
   import { onMount } from 'svelte'
   import { currentPage, userProfile } from '../stores/auth.js'
   import { altaComercio, TIPOS_COMERCIO } from '../stores/comercios.js'
-  import { provincias, getDepartamentos, getLocalidades } from '../lib/georef.js'
+  import { provincias, getDepartamentos, getLocalidades, resolverNombresLocalidad } from '../lib/georef.js'
   import { obtenerPosicion, geocodificarDireccion } from '../lib/geolocation.js'
+  import { appConfig, cargarConfig } from '../stores/config.js'
 
   // Form state
   let nombre      = ''
@@ -28,19 +29,75 @@
   let geocoding   = false
   let geoAprox    = false  // true si las coords son del centro de la localidad, no la calle
 
+  // ── Restricción de localidades ───────────────────────────────────────────
+  let localidadesRestricc  = []   // [{ id, label }]
+  let cargandoRestricc     = false
+  let resolviendoUbicacion = false
+
+  $: restriccionActiva = $appConfig?.restriccionActiva && ($appConfig?.localidadesHabilitadas?.length > 0)
+
   // Cargar datos geográficos del perfil del usuario
   onMount(async () => {
-    if (provinciaId) {
-      loadingDepts = true
-      departamentos = await getDepartamentos(provinciaId).catch(() => [])
-      loadingDepts = false
-    }
-    if (departamentoId) {
-      loadingLocs = true
-      localidades = await getLocalidades(departamentoId).catch(() => [])
-      loadingLocs = false
+    // Cargar config global si no está cargada
+    if (!$appConfig) await cargarConfig()
+
+    // Si hay restricción, resolver nombres de las localidades habilitadas
+    if ($appConfig?.restriccionActiva && $appConfig?.localidadesHabilitadas?.length > 0) {
+      cargandoRestricc = true
+      const ids = $appConfig.localidadesHabilitadas
+      const map = await resolverNombresLocalidad(ids).catch(() => new Map())
+      localidadesRestricc = ids.map(id => ({
+        id,
+        label: map.get(`${id}__label`) || map.get(id) || id,
+      }))
+      cargandoRestricc = false
+
+      // En modo restringido: si el perfil del usuario ya tiene localidad habilitada,
+      // pre-seleccionarla y resolver provincia/departamento
+      if (localidadId && ids.includes(localidadId)) {
+        await resolverProvDeptoDesdeLocalidad(localidadId)
+      } else {
+        // La localidad del perfil no está en la lista habilitada (o no hay): limpiar
+        localidadId    = ''
+        provinciaId    = ''
+        departamentoId = ''
+      }
+    } else {
+      // Modo normal: cargar cascada geográfica desde el perfil
+      if (provinciaId) {
+        loadingDepts = true
+        departamentos = await getDepartamentos(provinciaId).catch(() => [])
+        loadingDepts = false
+      }
+      if (departamentoId) {
+        loadingLocs = true
+        localidades = await getLocalidades(departamentoId).catch(() => [])
+        loadingLocs = false
+      }
     }
   })
+
+  // ── Resolver provincia/departamento desde una localidad (modo restringido) ─
+  async function resolverProvDeptoDesdeLocalidad(locId) {
+    if (!locId) { provinciaId = ''; departamentoId = ''; return }
+    resolviendoUbicacion = true
+    try {
+      const url  = `https://apis.datos.gob.ar/georef/api/localidades?id=${locId}&campos=id,nombre,provincia,departamento&max=1`
+      const res  = await fetch(url)
+      const data = await res.json()
+      const loc  = data.localidades?.[0]
+      if (loc) {
+        provinciaId    = String(loc.provincia?.id    || '')
+        departamentoId = String(loc.departamento?.id || '')
+      }
+    } catch (e) {
+      console.error('resolverProvDepto:', e)
+    } finally {
+      resolviendoUbicacion = false
+    }
+    // Disparar geocodificación automática si ya hay dirección
+    autoGeocodificar()
+  }
 
   // Geocodificar automáticamente cuando hay dirección + localidad completos
   let geoTimeout = null
@@ -54,8 +111,28 @@
       lng = null
       gpsOk = false
       try {
-        const nomLocalidad = localidades.find(l => l.id === localidadId)?.nombre || ''
-        const nomProvincia = provincias.find(p => p.id === provinciaId)?.nombre   || ''
+        // Nombre legible de localidad y provincia para geocodificar
+        let nomLocalidad = ''
+        let nomProvincia = ''
+
+        if (restriccionActiva) {
+          nomLocalidad = localidadesRestricc.find(l => l.id === localidadId)?.label || ''
+          // Resolver nombre de provincia si tenemos el ID
+          if (provinciaId) {
+            nomProvincia = provincias.find(p => p.id === provinciaId)?.nombre || ''
+            // Si no está en la lista estática (IDs numéricos), intentar vía georef
+            if (!nomProvincia) {
+              try {
+                const r = await fetch(`https://apis.datos.gob.ar/georef/api/provincias?id=${provinciaId}&campos=id,nombre&max=1`)
+                const d = await r.json()
+                nomProvincia = d.provincias?.[0]?.nombre || ''
+              } catch {}
+            }
+          }
+        } else {
+          nomLocalidad = localidades.find(l => l.id === localidadId)?.nombre || ''
+          nomProvincia = provincias.find(p => p.id === provinciaId)?.nombre   || ''
+        }
 
         // Intento 1: dirección completa + localidad + provincia
         let result = null
@@ -140,9 +217,15 @@
       errors.tipo = 'Seleccioná el tipo de comercio.'
     if (!direccion.trim())
       errors.direccion = 'Ingresá la dirección del comercio.'
-    if (!provinciaId)  errors.provincia = 'Seleccioná la provincia.'
-    if (!departamentoId) errors.departamento = 'Seleccioná el departamento.'
-    if (!localidadId)  errors.localidad = 'Seleccioná la localidad.'
+
+    if (restriccionActiva) {
+      if (!localidadId)
+        errors.localidad = 'Seleccioná la localidad del comercio.'
+    } else {
+      if (!provinciaId)    errors.provincia    = 'Seleccioná la provincia.'
+      if (!departamentoId) errors.departamento = 'Seleccioná el departamento.'
+      if (!localidadId)    errors.localidad    = 'Seleccioná la localidad.'
+    }
     return Object.keys(errors).length === 0
   }
 
@@ -154,9 +237,9 @@
       const id = await altaComercio({
         nombre, tipo, direccion,
         lat, lng,
-        provincia: provinciaId,
+        provincia:    provinciaId,
         departamento: departamentoId,
-        localidad: localidadId,
+        localidad:    localidadId,
         descripcion,
       })
       currentPage.set('detalle-comercio:' + id)
@@ -168,9 +251,12 @@
 
   function volver() { currentPage.set('buscar') }
 
-  function nombreProvincia(id) { return provincias.find(p=>p.id===id)?.nombre || '' }
+  function nombreProvincia(id)    { return provincias.find(p=>p.id===id)?.nombre || '' }
   function nombreDepartamento(id) { return departamentos.find(d=>d.id===id)?.nombre || '' }
-  function nombreLocalidad(id) { return localidades.find(l=>l.id===id)?.nombre || '' }
+  function nombreLocalidad(id)    {
+    if (restriccionActiva) return localidadesRestricc.find(l=>l.id===id)?.label || ''
+    return localidades.find(l=>l.id===id)?.nombre || ''
+  }
 </script>
 
 <div class="app-shell alta-shell">
@@ -280,49 +366,93 @@
       {/if}
     </div>
 
-    <!-- Provincia -->
-    <div class="form-group" class:has-error={errors.provincia}>
-      <label class="form-label" for="prov-alta">Provincia</label>
-      <select id="prov-alta" class="form-select" class:error={errors.provincia}
-        bind:value={provinciaId} on:change={onProvinciaChange}>
-        <option value="">Seleccioná la provincia…</option>
-        {#each provincias as p}<option value={p.id}>{p.nombre}</option>{/each}
-      </select>
-      {#if errors.provincia}<span class="field-error">{errors.provincia}</span>{/if}
-    </div>
+    <!-- ── Localidad: modo restringido vs. modo normal ── -->
 
-    <!-- Departamento -->
-    <div class="form-group" class:has-error={errors.departamento}>
-      <label class="form-label" for="dept-alta">Departamento / Partido</label>
-      <select id="dept-alta" class="form-select" class:error={errors.departamento}
-        bind:value={departamentoId} on:change={onDepartamentoChange}
-        disabled={!provinciaId || loadingDepts}>
-        <option value="">{!provinciaId ? 'Primero elegí provincia' : loadingDepts ? 'Cargando…' : 'Seleccioná…'}</option>
-        {#each departamentos as d}<option value={d.id}>{d.nombre}</option>{/each}
-      </select>
-      {#if errors.departamento}<span class="field-error">{errors.departamento}</span>{/if}
-    </div>
+    {#if restriccionActiva}
 
-    <!-- Localidad -->
-    <div class="form-group" class:has-error={errors.localidad}>
-      <label class="form-label" for="loc-alta">Localidad</label>
-      <select id="loc-alta" class="form-select" class:error={errors.localidad}
-        bind:value={localidadId}
-        disabled={!departamentoId || loadingLocs}
-        on:change={autoGeocodificar}>
-        <option value="">{!departamentoId ? 'Primero elegí departamento' : loadingLocs ? 'Cargando…' : 'Seleccioná…'}</option>
-        {#each localidades as l}<option value={l.id}>{l.nombre}</option>{/each}
-      </select>
-      {#if errors.localidad}<span class="field-error">{errors.localidad}</span>{/if}
-    </div>
+      <!-- Banner de restricción -->
+      <div class="restricc-banner">
+        📍 La app está disponible en localidades seleccionadas durante esta etapa de evaluación.
+      </div>
+
+      <!-- Selector simple de localidades habilitadas -->
+      <div class="form-group" class:has-error={errors.localidad}>
+        <label class="form-label" for="localidad-restricc">Localidad del comercio</label>
+        {#if cargandoRestricc}
+          <div class="form-select" style="color:var(--c-text-light)">Cargando localidades…</div>
+        {:else}
+          <select
+            id="localidad-restricc"
+            class="form-select"
+            class:error={errors.localidad}
+            bind:value={localidadId}
+            on:change={() => resolverProvDeptoDesdeLocalidad(localidadId)}
+          >
+            <option value="">Seleccioná la localidad…</option>
+            {#each localidadesRestricc as loc}
+              <option value={loc.id}>{loc.label}</option>
+            {/each}
+          </select>
+        {/if}
+        {#if errors.localidad}
+          <span class="field-error">{errors.localidad}</span>
+        {/if}
+        {#if resolviendoUbicacion}
+          <span class="resolviendo-msg">⏳ Obteniendo datos de ubicación…</span>
+        {:else if localidadId && provinciaId}
+          <span class="resolviendo-ok">✓ Ubicación resuelta</span>
+        {/if}
+      </div>
+
+    {:else}
+
+      <!-- Modo normal: selectores en cascada -->
+
+      <!-- Provincia -->
+      <div class="form-group" class:has-error={errors.provincia}>
+        <label class="form-label" for="prov-alta">Provincia</label>
+        <select id="prov-alta" class="form-select" class:error={errors.provincia}
+          bind:value={provinciaId} on:change={onProvinciaChange}>
+          <option value="">Seleccioná la provincia…</option>
+          {#each provincias as p}<option value={p.id}>{p.nombre}</option>{/each}
+        </select>
+        {#if errors.provincia}<span class="field-error">{errors.provincia}</span>{/if}
+      </div>
+
+      <!-- Departamento -->
+      <div class="form-group" class:has-error={errors.departamento}>
+        <label class="form-label" for="dept-alta">Departamento / Partido</label>
+        <select id="dept-alta" class="form-select" class:error={errors.departamento}
+          bind:value={departamentoId} on:change={onDepartamentoChange}
+          disabled={!provinciaId || loadingDepts}>
+          <option value="">{!provinciaId ? 'Primero elegí provincia' : loadingDepts ? 'Cargando…' : 'Seleccioná…'}</option>
+          {#each departamentos as d}<option value={d.id}>{d.nombre}</option>{/each}
+        </select>
+        {#if errors.departamento}<span class="field-error">{errors.departamento}</span>{/if}
+      </div>
+
+      <!-- Localidad -->
+      <div class="form-group" class:has-error={errors.localidad}>
+        <label class="form-label" for="loc-alta">Localidad</label>
+        <select id="loc-alta" class="form-select" class:error={errors.localidad}
+          bind:value={localidadId}
+          disabled={!departamentoId || loadingLocs}
+          on:change={autoGeocodificar}>
+          <option value="">{!departamentoId ? 'Primero elegí departamento' : loadingLocs ? 'Cargando…' : 'Seleccioná…'}</option>
+          {#each localidades as l}<option value={l.id}>{l.nombre}</option>{/each}
+        </select>
+        {#if errors.localidad}<span class="field-error">{errors.localidad}</span>{/if}
+      </div>
+
+    {/if}
 
     <!-- Preview ubicación -->
-    {#if localidadId}
+    {#if localidadId && !restriccionActiva}
       <div class="location-preview">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
         </svg>
-        {nombreLocalidad(localidadId)}, {nombreDepartamento(departamentoId)}, {nombreProvincia(provinciaId)}
+        {nombreLocalidad(localidadId)}{departamentoId ? ', ' + nombreDepartamento(departamentoId) : ''}{provinciaId ? ', ' + nombreProvincia(provinciaId) : ''}
       </div>
     {/if}
 
@@ -413,6 +543,29 @@
     padding: 10px 12px;
     border-radius: 10px;
     margin-bottom: 4px;
+  }
+
+  /* Restricción */
+  .restricc-banner {
+    font-size: 0.82rem;
+    color: var(--c-primary-dim);
+    background: rgba(27,107,58,0.07);
+    border: 1px solid rgba(27,107,58,0.18);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 4px;
+  }
+
+  .resolviendo-msg {
+    font-size: 0.78rem;
+    color: var(--c-text-light);
+    margin-top: 4px;
+  }
+  .resolviendo-ok {
+    font-size: 0.78rem;
+    color: var(--c-primary);
+    font-weight: 600;
+    margin-top: 4px;
   }
 
   /* Tipo grid */
