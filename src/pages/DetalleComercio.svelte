@@ -322,19 +322,6 @@
           </div>
         {/if}
       </div>
-
-      <!-- Próximamente: precios -->
-      <div class="proximos-section">
-        <div class="proximos-card">
-          <span class="proximos-icon">??</span>
-          <div>
-            <p class="proximos-titulo">Precios</p>
-            <p class="proximos-desc">Próximamente podrás ver y cargar precios de este comercio.</p>
-          </div>
-          <span class="proximos-badge">M3</span>
-        </div>
-      </div>
-
     {/if}
   </main>
 

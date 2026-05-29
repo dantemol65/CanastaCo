@@ -34,6 +34,7 @@
   let localidadesRestricc  = []
   let cargandoRestricc     = false
   let resolviendoUbicacion = false
+  let formCargado          = false  // evita hasChanges prematuro
 
   $: restriccionActiva = $appConfig?.restriccionActiva && ($appConfig?.localidadesHabilitadas?.length > 0)
 
@@ -68,6 +69,7 @@
       if (provinciaId)    cargarDepartamentos(provinciaId,    false)
       if (departamentoId) cargarLocalidades(departamentoId, false)
     }
+    formCargado = true
   })
 
   // ── Check de alias al abandonar el input ─────────────────────────────────
@@ -196,7 +198,7 @@
   // ── Submit ────────────────────────────────────────────────────────────────
 
   function hasChanges() {
-    if (!$userProfile) return true
+    if (!formCargado || !$userProfile) return false
     return (
       alias          !== ($userProfile.alias          || '') ||
       provinciaId    !== ($userProfile.provincia       || '') ||

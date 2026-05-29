@@ -5,7 +5,7 @@ import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp, runTransaction,
   collection, query, where, limit, getDocs
 } from 'firebase/firestore'
-import { auth, db, googleSignInPopup, googleSignInRedirect, getGoogleRedirectResult, emailSignIn } from '../lib/firebase.js'
+import { auth, db, googleSignInPopup, googleSignInRedirect, getGoogleRedirectResult, emailSignIn, emailRegister, sendVerificationEmail } from '../lib/firebase.js'
 import { cachearFotoUrl, cargarFotoCacheada, limpiarFotoCache } from '../lib/fotocache.js'
 import { detenerListenerNotificaciones } from './notificaciones.js'
 
@@ -29,7 +29,6 @@ function loadProfileCache() {
   try {
     const p = JSON.parse(localStorage.getItem(CACHE_KEY))
     if (!p) return null
-    // Migración: IDs viejos (AR-A) → nuevo sistema georef (numérico)
     if (p.provincia && p.provincia.startsWith('AR-')) {
       localStorage.removeItem(CACHE_KEY)
       localStorage.removeItem(PENDING_KEY)
@@ -77,7 +76,6 @@ export async function syncPendingProfile() {
   const pending = loadPending()
   const user    = get(currentUser)
   if (!pending || !user || !navigator.onLine) return
-
   try {
     await setDoc(doc(db, 'usuarios', user.uid), {
       ...pending,
@@ -85,9 +83,7 @@ export async function syncPendingProfile() {
     })
     clearPending()
     pendingSync.set(false)
-  } catch {
-    // Sin conexión todavía, se reintentará la próxima vez
-  }
+  } catch {}
 }
 
 // ── Inicialización ────────────────────────────────────────────────────────
@@ -103,13 +99,11 @@ export async function initAuth() {
   onAuthStateChanged(auth, async (user) => {
     if (user) {
       currentUser.set(user)
-
       const pending = loadPending()
       if (pending) {
         pendingSync.set(true)
         await syncPendingProfile()
       }
-
       try {
         const profile = await _fetchProfile(user.uid)
         if (profile) {
@@ -168,6 +162,13 @@ export async function signInWithEmail(email, password) {
   authError.set(null)
   try {
     const result = await emailSignIn(email, password)
+    // Cuentas de testing (@test.com) no requieren verificación de email
+    const esTesting = email.endsWith('@test.com')
+    if (!result.user.emailVerified && !esTesting) {
+      await _signOut(auth)
+      authError.set('Debés verificar tu email antes de ingresar. Revisá tu bandeja de entrada.')
+      return
+    }
     await _handleAfterLogin(result.user)
   } catch (err) {
     const msgs = {
@@ -178,6 +179,24 @@ export async function signInWithEmail(email, password) {
       'auth/too-many-requests':  'Demasiados intentos. Esperá unos minutos.',
     }
     authError.set(msgs[err.code] || 'Error al ingresar: ' + err.message)
+  }
+}
+
+export async function registerWithEmail(email, password) {
+  authError.set(null)
+  try {
+    const result = await emailRegister(email, password)
+    await sendVerificationEmail(result.user)
+    await _signOut(auth)
+    return { success: true }
+  } catch (err) {
+    const msgs = {
+      'auth/email-already-in-use': 'Ya existe una cuenta con ese email.',
+      'auth/invalid-email':        'Email inválido.',
+      'auth/weak-password':        'La contraseña debe tener al menos 6 caracteres.',
+    }
+    authError.set(msgs[err.code] || 'Error al registrar: ' + err.message)
+    return { success: false }
   }
 }
 
@@ -197,43 +216,23 @@ export async function signOut() {
 
 // ── Alias — unicidad ──────────────────────────────────────────────────────
 
-/**
- * Normaliza el alias para usarlo como clave en alias_index.
- * Minúsculas, sin espacios al inicio/fin, espacios internos → guión bajo.
- */
 export function normalizarAlias(alias) {
   return alias.trim().toLowerCase().replace(/\s+/g, '_')
 }
 
-/**
- * Verifica si un alias está disponible para el usuario actual.
- * Devuelve true si está libre o si ya pertenece al mismo UID.
- * Devuelve false si está tomado por otro usuario.
- * Devuelve null si no se puede determinar (sin conexión).
- *
- * Estrategia de doble consulta:
- *  1. Busca en alias_index (índice mantenido por saveUserProfile).
- *  2. Si no está en el índice (usuarios pre-migración), busca en usuarios directamente.
- */
 export async function verificarAliasDisponible(alias, uidActual) {
   if (!alias?.trim()) return null
   const clave = normalizarAlias(alias)
   try {
-    // 1. Consultar el índice
     const snapIdx = await getDoc(doc(db, 'alias_index', clave))
     if (snapIdx.exists()) {
       return snapIdx.data().uid === uidActual
     }
-
-    // 2. Fallback: buscar en la colección usuarios
-    // Cubre a los usuarios registrados antes de que existiera alias_index
     const q    = query(collection(db, 'usuarios'), where('alias', '==', alias.trim()), limit(1))
     const snap = await getDocs(q)
     if (snap.empty) return true
     return snap.docs[0].data().uid === uidActual
-
   } catch {
-    // Sin conexión: no podemos verificar — la transacción en saveUserProfile lo atrapará
     return null
   }
 }
@@ -269,11 +268,9 @@ export async function saveUserProfile(data) {
     reputacion:   perfilActual?.reputacion ?? 0,
   }
 
-  // 1. Guardar siempre en localStorage (funciona offline)
   saveProfileCache(profile)
   userProfile.set(profile)
 
-  // 2. Sin conexión: guardar pendiente y salir
   if (!navigator.onLine) {
     savePending(profile)
     pendingSync.set(true)
@@ -281,7 +278,6 @@ export async function saveUserProfile(data) {
     return
   }
 
-  // 3. Con conexión: transacción atómica para garantizar unicidad del alias
   const refPerfil   = doc(db, 'usuarios',    user.uid)
   const refAliasNew = doc(db, 'alias_index', claveNueva)
   const refAliasOld = (claveVieja && claveVieja !== claveNueva)
@@ -290,30 +286,21 @@ export async function saveUserProfile(data) {
 
   try {
     await runTransaction(db, async (tx) => {
-      // Verificar que el alias nuevo no esté tomado por otro usuario
       const snapAlias = await tx.get(refAliasNew)
       if (snapAlias.exists() && snapAlias.data().uid !== user.uid) {
         throw new Error('El alias ya está en uso. Elegí otro.')
       }
-
-      // Liberar el alias anterior si el usuario lo cambió
       if (refAliasOld) tx.delete(refAliasOld)
-
-      // Reservar el alias nuevo en el índice
       tx.set(refAliasNew, {
         uid:           user.uid,
         alias:         nuevoAlias,
         actualizadoEn: new Date().toISOString(),
       })
-
-      // Escribir el perfil del usuario
       tx.set(refPerfil, { ...profile, ultimoAcceso: serverTimestamp() })
     })
-
     clearPending()
     pendingSync.set(false)
   } catch (err) {
-    // Revertir el optimistic update en el store si la transacción falló
     if (perfilActual) userProfile.set(perfilActual)
     throw err
   }
