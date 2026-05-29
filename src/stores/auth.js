@@ -88,6 +88,12 @@ export async function syncPendingProfile() {
 
 // ── Inicialización ────────────────────────────────────────────────────────
 
+// Páginas que initAuth no debe pisar si ya están activas
+function _paginaExterna() {
+  const p = get(currentPage)
+  return p === 'comercio-publico' || p?.startsWith('comercio-publico:')
+}
+
 export async function initAuth() {
   try {
     const result = await getGoogleRedirectResult()
@@ -110,12 +116,12 @@ export async function initAuth() {
           userProfile.set(profile)
           saveProfileCache(profile)
           _updateLastAccess(user.uid)
-          if (verificarEstadoUsuario(profile)) currentPage.set('home')
+          if (verificarEstadoUsuario(profile) && !_paginaExterna()) currentPage.set('home')
         } else {
           const cached = loadProfileCache()
           if (cached && cached.uid === user.uid) {
             userProfile.set(cached)
-            if (verificarEstadoUsuario(cached)) currentPage.set('home')
+            if (verificarEstadoUsuario(cached) && !_paginaExterna()) currentPage.set('home')
           } else {
             clearProfileCache()
             currentPage.set('perfil')
@@ -125,9 +131,9 @@ export async function initAuth() {
         const cached = loadProfileCache()
         if (cached && cached.uid === user.uid) {
           userProfile.set(cached)
-          currentPage.set('home')
+          if (!_paginaExterna()) currentPage.set('home')
         } else {
-          currentPage.set('perfil')
+          if (!_paginaExterna()) currentPage.set('perfil')
         }
       }
     } else {
