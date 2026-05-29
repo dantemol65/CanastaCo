@@ -18,6 +18,13 @@ export default defineConfig({
   resolve: {
     dedupe: ['firebase']
   },
+  // ── Servidor de desarrollo ────────────────────────────────────────────────
+  // historyApiFallback replica la regla de Netlify (/* → /index.html)
+  // Permite probar rutas como /comercio/{id}?dir=...&token=... en local
+  // sin hacer deploy. No afecta el build de producción.
+  server: {
+    historyApiFallback: true,
+  },
   plugins: [
     svelte(),
     VitePWA({
@@ -62,6 +69,11 @@ export default defineConfig({
           },
           {
             urlPattern: /^https:\/\/api\.qrserver\.com\/.*/i,
+            handler: 'NetworkOnly',
+          },
+          // ── CDN jsPDF: NetworkOnly (igual que otras APIs externas) ─────────
+          {
+            urlPattern: /^https:\/\/cdnjs\.cloudflare\.com\/.*/i,
             handler: 'NetworkOnly',
           },
           // ── Fonts y avatares: CacheFirst ─────────────────────────────────

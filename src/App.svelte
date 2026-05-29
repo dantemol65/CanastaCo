@@ -8,25 +8,44 @@
   import AltaComercio     from './pages/AltaComercio.svelte'
   import DetalleComercio  from './pages/DetalleComercio.svelte'
   import Admin            from './pages/Admin.svelte'
-  // Módulo 3 — Precios
   import MisListas          from './pages/MisListas.svelte'
   import MiLista            from './pages/MiLista.svelte'
   import OptimizadorCompras from './pages/OptimizadorCompras.svelte'
   import Precios            from './pages/Precios.svelte'
-  import ListaPrecios     from './pages/ListaPrecios.svelte'
-  import ListaTematica    from './pages/ListaTematica.svelte'
-  import ComparadorPrecios from './pages/ComparadorPrecios.svelte'
-  import PublicarLanding      from './pages/PublicarLanding.svelte'
+  import ListaPrecios       from './pages/ListaPrecios.svelte'
+  import ListaTematica      from './pages/ListaTematica.svelte'
+  import ComparadorPrecios  from './pages/ComparadorPrecios.svelte'
+  import PublicarLanding    from './pages/PublicarLanding.svelte'
   import GestionListasComercio from './pages/GestionListasComercio.svelte'
   import Notificaciones   from './pages/Notificaciones.svelte'
   import Bloqueado        from './pages/Bloqueado.svelte'
   import Sugerencias      from './pages/Sugerencias.svelte'
-  import { cargarConfig }  from './stores/config.js'
+  import ComercioPublico from './pages/ComercioPublico.svelte'
+  import { cargarConfig } from './stores/config.js'
 
   let mostrarAvisoSalir = false
   let timerAvisoSalir   = null
 
+  // ── Parámetros QR del cartel ──────────────────────────────────────────────
+  let qrComercioId = ''
+  let qrDir        = ''
+  let qrToken      = ''
+
   onMount(() => {
+    // ── Detectar si la app se abrió desde el QR del cartel ─────────────────
+    // URL esperada: https://canasta.co/comercio/{id}?dir=...&token=...
+    // Se navega a ComercioPublico ANTES de initAuth — no requiere login.
+    const path  = window.location.pathname
+    const match = path.match(/^\/comercio\/([^/?]+)/)
+    if (match) {
+      const params = new URLSearchParams(window.location.search)
+      qrComercioId = match[1]
+      qrDir        = params.get('dir')   || ''
+      qrToken      = params.get('token') || ''
+      // Navegar directo a la página pública sin pasar por login
+      currentPage.set('comercio-publico:' + qrComercioId)
+    }
+
     initAuth()
     cargarConfig()
 
@@ -38,22 +57,12 @@
         const pagina = $currentPage
 
         if (pagina === 'home' || pagina === 'login' || pagina === 'bloqueado') {
-          if (mostrarAvisoSalir) {
-            // Segundo back con aviso visible → cerrar la app
-            // No re-agregamos la entrada → el browser cierra la PWA
-            return
-          }
-          // Primer back en pantalla raíz → mostrar aviso y re-agregar entrada
+          if (mostrarAvisoSalir) return
           mostrarAvisoSalir = true
           history.pushState({ canastaco: 'top' }, '')
-
-          // Auto-ocultar el aviso después de 3 segundos
           clearTimeout(timerAvisoSalir)
-          timerAvisoSalir = setTimeout(() => {
-            mostrarAvisoSalir = false
-          }, 3000)
+          timerAvisoSalir = setTimeout(() => { mostrarAvisoSalir = false }, 3000)
         } else {
-          // En otra pantalla → re-agregar entrada (cada pantalla tiene su propio volver)
           history.pushState({ canastaco: 'top' }, '')
         }
       }
@@ -102,10 +111,15 @@
 {:else if basePage === 'detalle-comercio'}
   <DetalleComercio comercioId={pageParam} />
 
+{:else if basePage === 'comercio-publico'}
+  <ComercioPublico
+    comercioId={pageParam}
+    qrDir={qrDir}
+    qrToken={qrToken}
+  />
+
 {:else if basePage === 'admin'}
   <Admin />
-
-<!-- ── Módulo 3: Precios ── -->
 
 {:else if basePage === 'precios-comercio'}
   <Precios comercioId={pageParam} />
@@ -146,7 +160,6 @@
 
 {/if}
 
-<!-- Dialog de confirmación de salida -->
 {#if mostrarAvisoSalir}
   <div class="salir-toast" role="status">
     Presioná de nuevo para salir
@@ -155,17 +168,11 @@
 
 <style>
   .loading-screen {
-    min-height: 100dvh;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--c-primary);
-    flex-direction: column;
-    gap: 24px;
+    min-height: 100dvh; width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--c-primary); flex-direction: column; gap: 24px;
   }
 
-  /* ── Toast salir ── */
   .salir-toast {
     position: fixed; bottom: 80px; left: 50%;
     transform: translateX(-50%);
@@ -180,5 +187,4 @@
     from { opacity: 0; transform: translateX(-50%) translateY(8px); }
     to   { opacity: 1; transform: translateX(-50%) translateY(0); }
   }
-
 </style>
