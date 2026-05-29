@@ -17,10 +17,10 @@ export async function generarTokenCartel(comercioId, direccion, codigoPublico) {
   return hex.slice(0, 16)   // 16 chars es suficiente para verificación
 }
 
-export function construirUrlCartel(comercioId, direccion, token) {
-  const base = 'https://canasta.co/comercio/' + comercioId
-  const dir  = encodeURIComponent((direccion || '').trim())
-  return `${base}?dir=${dir}&token=${token}`
+export function construirUrlCartel(comercioId, token) {
+  // La dirección NO va en la URL — se lee de Firestore al abrir el QR.
+  // Esto evita problemas con caracteres especiales en query strings.
+  return `https://canastaco.netlify.app/comercio/${comercioId}?token=${token}`
 }
 
 // ── Verificación (se usa en DetalleComercio.svelte al abrir QR) ────────────
@@ -62,7 +62,7 @@ export async function generarCartelPDF(comercio) {
 
   // ── Token y URL del QR ───────────────────────────────────────────────────
   const token = await generarTokenCartel(comercio.id, comercio.direccion, comercio.codigoPublico)
-  const urlQR = construirUrlCartel(comercio.id, comercio.direccion, token)
+  const urlQR = construirUrlCartel(comercio.id, token)
 
   // ── Documento: A5 apaisado (148 x 210 mm) ────────────────────────────────
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a5' })

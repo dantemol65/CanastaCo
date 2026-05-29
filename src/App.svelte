@@ -28,19 +28,17 @@
 
   // ── Parámetros QR del cartel ──────────────────────────────────────────────
   let qrComercioId = ''
-  let qrDir        = ''
   let qrToken      = ''
 
   onMount(() => {
     // ── Detectar si la app se abrió desde el QR del cartel ─────────────────
-    // URL esperada: https://canasta.co/comercio/{id}?dir=...&token=...
+    // URL esperada: https://canastaco.netlify.app/comercio/{id}?token=...
     // Se navega a ComercioPublico ANTES de initAuth — no requiere login.
     const path  = window.location.pathname
     const match = path.match(/^\/comercio\/([^/?]+)/)
     if (match) {
       const params = new URLSearchParams(window.location.search)
       qrComercioId = match[1]
-      qrDir        = params.get('dir')   || ''
       qrToken      = params.get('token') || ''
       // Navegar directo a la página pública sin pasar por login
       currentPage.set('comercio-publico:' + qrComercioId)
@@ -114,7 +112,6 @@
 {:else if basePage === 'comercio-publico'}
   <ComercioPublico
     comercioId={pageParam}
-    qrDir={qrDir}
     qrToken={qrToken}
   />
 
