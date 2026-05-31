@@ -148,12 +148,33 @@
     dispatch('noEncontrado', { codigoBarras: codigoLeido })
   }
 
-  function reescanear() {
+  async function reescanear() {
     scanSession++          // invalida TODOS los frames y fetches en vuelo
     detectando   = false
     codigoLeido  = ''
     resultadoOFF = null
     estado       = 'escaneando'
+
+    // Reasignar el stream al video — el {#if} del template pudo haberlo desmontado
+    // y el srcObject se pierde al remontar el elemento <video>
+    if (stream && videoEl) {
+      videoEl.srcObject = stream
+      try { await videoEl.play() } catch {}
+    } else if (!stream) {
+      // El stream se cerró (caso raro) — reabrirlo
+      try {
+        stream = await abrirCamara()
+        if (videoEl) {
+          videoEl.srcObject = stream
+          await videoEl.play()
+        }
+      } catch (err) {
+        mensajeError = err.message
+        estado = 'error'
+        return
+      }
+    }
+
     // Delay: da tiempo al usuario para apartar la cámara del producto anterior
     setTimeout(iniciarLoop, 1500)
   }

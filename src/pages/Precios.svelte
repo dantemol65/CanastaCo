@@ -1,3 +1,5 @@
+// ========================================
+
 <script>
   import { onMount, tick } from 'svelte'
 
@@ -177,7 +179,24 @@
     codigoBarrasActual = null
   }
 
-  function abrirEscaner() { mostrarEscaner = true }
+  function abrirEscaner() {
+    // Limpiar estado del formulario antes de abrir el escáner
+    // para que los datos del producto anterior no contaminen el nuevo
+    productoSel        = null
+    busquedaProd       = ''
+    sugerencias        = []
+    modoNuevo          = false
+    nuevaMarca         = ''
+    nuevaUnidad        = 'u'
+    nuevaCategoria     = 'otros'
+    precioValor        = ''
+    esOferta           = false
+    vencimiento        = ''
+    codigoBarrasActual = null
+    desdeEscaner       = false
+    paso               = 1
+    mostrarEscaner     = true
+  }
   function cerrarEscaner() { mostrarEscaner = false }
 
   // Producto identificado por OFF → pre-llenar y pasar al paso 2
@@ -1385,3 +1404,5 @@
   .eliminar-btn:hover { background: #FEE2E2; }
 
 </style>
+
+// ========================================
