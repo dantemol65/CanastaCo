@@ -1,15 +1,6 @@
-// ========================================
-
 <script>
   import { onMount, tick } from 'svelte'
-
-  // Acción portal: mueve el nodo al body para escapar de cualquier overflow/transform
-  function portal(node) {
-    document.body.appendChild(node)
-    return {
-      destroy() { node.isConnected && document.body.removeChild(node) }
-    }
-  }
+  import { get } from 'svelte/store'
   import { currentPage, currentUser, userProfile, usuarioSuspendido } from '../stores/auth.js'
   import { comercioActivo, cargarComercio } from '../stores/comercios.js'
   import {
@@ -20,12 +11,19 @@
     CATEGORIAS, UNIDADES,
     freshness, freshnessLabel, formatPrecio, esPrecioVencido,
   } from '../stores/precios.js'
-  import BottomNav from '../components/BottomNav.svelte'
-  import { get } from 'svelte/store'
   import { productoSolicitadoSeleccionado } from '../stores/contexto.js'
   import { marcarSolicitudCubierta, cargarSolicitudes } from '../stores/listas_compras.js'
   import EscanerCodigo from '../components/EscanerCodigo.svelte'
   import BotonVoz from '../components/BotonVoz.svelte'
+  import BottomNav from '../components/BottomNav.svelte'
+
+  // Acción portal: mueve el nodo al body para escapar de cualquier overflow/transform
+  function portal(node) {
+    document.body.appendChild(node)
+    return {
+      destroy() { node.isConnected && document.body.removeChild(node) }
+    }
+  }
 
   export let comercioId = ''
 
