@@ -86,7 +86,7 @@ export async function generarCartelPDF(comercio) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(28)
   doc.setTextColor(245, 163, 33)   // --c-accent
-  doc.text('.co', 16 + doc.getTextWidth('Mejor Precio'), 22)
+  doc.text('', 16 + doc.getTextWidth('Mejor Precio'), 22)
 
   // Tagline en la franja
   doc.setFont('helvetica', 'normal')
@@ -140,7 +140,7 @@ export async function generarCartelPDF(comercio) {
   // Badge "Comercio adherido"
   doc.setFillColor(240, 253, 244)
   doc.setDrawColor(187, 247, 208)
-  doc.roundedRect(colIzq, 107, 68, 10, 2, 2, 'FD')
+  doc.roundedRect(colIzq, 107, 88, 10, 2, 2, 'FD')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(27, 107, 58)

@@ -90,7 +90,7 @@
           <text x="39" y="21" text-anchor="middle" font-size="9" font-weight="700" fill="white" font-family="sans-serif">$</text>
         </svg>
       </div>
-      <h1 class="brand-name">Mejor Precio<span class="brand-dot">.co</span></h1>
+      <h1 class="brand-name">Mejor<span class="brand-dot">Precio</span></h1>
       <p class="brand-tagline">Encontrá los mejores precios<br>de tu barrio</p>
     </div>
 

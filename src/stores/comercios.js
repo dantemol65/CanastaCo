@@ -315,7 +315,7 @@ export async function reclamarConCodigo(comercioId, codigoIngresado) {
     user.uid,
     'reclamo_aprobado',
     '¡Comercio verificado!',
-    `Sos el dueño verificado de "${data.nombre}" en canasta.co.`,
+    `Sos el dueño verificado de "${data.nombre}" en MejorPrecio.`,
     { comercioId }
   )
 

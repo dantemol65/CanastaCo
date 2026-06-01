@@ -259,7 +259,7 @@
   <!-- Header -->
   <header class="perfil-header">
     <div class="header-brand">
-      <span class="brand-mini">Mejor Precio<span class="dot">.co</span></span>
+      <span class="brand-mini">Mejor<span class="dot">Precio</span></span>
     </div>
     <button class="btn-salir" on:click={handleSignOut} aria-label="Salir">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">

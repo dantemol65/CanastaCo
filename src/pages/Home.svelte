@@ -161,7 +161,7 @@
   <header class="home-header">
     <div class="header-inner">
       <div class="header-left">
-        <div class="brand-home">Canasta<span class="accent-dot">.co</span></div>
+		<div class="brand-home">Mejor<span class="accent-dot">Precio</span></div>
         {#if localidadNombre}
           <div class="location-pill">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor">

@@ -55,7 +55,7 @@ export async function generarPDFCredencial({ comercio, codigoPublico, codigoPriv
   pdf.setTextColor(255, 255, 255)
   pdf.setFontSize(22)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('🧺 canasta.co', W/2, 18, { align: 'center' })
+  pdf.text('🧺 MejorPrecio', W/2, 18, { align: 'center' })
 
   pdf.setFontSize(9)
   pdf.setFont('helvetica', 'normal')
@@ -96,7 +96,7 @@ export async function generarPDFCredencial({ comercio, codigoPublico, codigoPriv
 
   pdf.setFontSize(8)
   pdf.setTextColor(100, 100, 100)
-  pdf.text('Escaneá para ver este comercio en canasta.co', W/2, 124, { align: 'center' })
+  pdf.text('Escaneá para ver este comercio en MejorPrecio', W/2, 124, { align: 'center' })
 
   // Código público visible
   pdf.setFontSize(10)
@@ -129,7 +129,7 @@ export async function generarPDFCredencial({ comercio, codigoPublico, codigoPriv
   pdf.setTextColor(255, 255, 255)
   pdf.setFontSize(8)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('🧺 canasta.co — CÓDIGO PRIVADO DE RECLAMACIÓN', W/2, 158, { align: 'center' })
+  pdf.text('🧺 MejorPrecio — CÓDIGO PRIVADO DE RECLAMACIÓN', W/2, 158, { align: 'center' })
 
   pdf.setTextColor(30, 30, 30)
   pdf.setFontSize(11)

@@ -234,7 +234,7 @@
             </svg>
           </div>
           <div class="qr-texto">
-            <p class="qr-titulo">✓ Cartel auténtico verificado por Canasta.co</p>
+            <p class="qr-titulo">✓ Cartel auténtico verificado por MejorPrecio</p>
             <p class="qr-desc">Este comercio publica sus precios en la app</p>
           </div>
         </div>
