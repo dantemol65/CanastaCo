@@ -77,7 +77,7 @@
 
   <header class="pub-header">
     <div class="pub-brand">
-      <span class="pub-brand-nombre">Canasta<span class="pub-dot">.co</span></span>
+      <span class="pub-brand-nombre">Mejor Precio<span class="pub-dot">.co</span></span>
     </div>
     <span class="pub-tagline">Comparador comunitario de precios</span>
   </header>
@@ -119,7 +119,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--c-primary)" stroke="none">
             <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
           </svg>
-          <span class="pub-dir-label">Dirección registrada en Canasta.co</span>
+          <span class="pub-dir-label">Dirección registrada en Mejor Precio</span>
         </div>
         <p class="pub-dir-valor">{comercio.direccion || 'Sin dirección registrada'}</p>
       </div>
@@ -147,7 +147,7 @@
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
             <polyline points="9 12 11 14 15 10"/>
           </svg>
-          <span>Cartel generado por el sistema oficial de Canasta.co</span>
+          <span>Cartel generado por el sistema oficial de Mejor Precio</span>
         </div>
       {:else if tokenEstado === 'error'}
         <div class="pub-token pub-token-error">
@@ -173,7 +173,7 @@
         <button class="pub-cta-primary" on:click={irALaApp}>
           Ver precios de este comercio
         </button>
-        <p class="pub-cta-hint">Canasta.co · Gratis · Sin publicidad · 🇦🇷</p>
+        <p class="pub-cta-hint">Mejor Precio · Gratis · Sin publicidad · 🇦🇷</p>
       </div>
 
     {/if}

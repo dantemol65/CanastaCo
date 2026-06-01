@@ -62,7 +62,7 @@
       <div class="enviado-state">
         <div class="enviado-icon">🎉</div>
         <p class="enviado-titulo">¡Gracias por tu sugerencia!</p>
-        <p class="enviado-sub">El equipo de Canasta.co la revisará pronto.</p>
+        <p class="enviado-sub">El equipo de Mejor Precio la revisará pronto.</p>
         <button class="btn btn-primary" on:click={volver}>Volver al inicio</button>
       </div>
 

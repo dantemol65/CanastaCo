@@ -31,8 +31,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
       manifest: {
-        name: 'Canasta.co',
-        short_name: 'Canasta',
+        name: 'Mejor Precio',
+        short_name: 'Mejor Precio',
         description: 'Encontrá los mejores precios de tu barrio',
         theme_color: '#1B6B3A',
         background_color: '#F7F9F4',

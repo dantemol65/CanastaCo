@@ -139,7 +139,7 @@
       lineas.push(`\n💰 Total: ${formatPrecioLista(repartidoConCant.totalRepartidoConCant)}`)
     }
 
-    lineas.push(`\nGenerado con Canasta.co`)
+    lineas.push(`\nGenerado con Mejor Precio`)
     return lineas.join('\n')
   }
 

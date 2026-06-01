@@ -32,7 +32,7 @@
 
   onMount(() => {
     // ── Detectar si la app se abrió desde el QR del cartel ─────────────────
-    // URL esperada: https://canastaco.netlify.app/comercio/{id}?token=...
+    // URL esperada: https://mejor-precio.netlify.app/comercio/{id}?token=...
     // Se navega a ComercioPublico ANTES de initAuth — no requiere login.
     const path  = window.location.pathname
     const match = path.match(/^\/comercio\/([^/?]+)/)
@@ -47,21 +47,21 @@
     initAuth()
     cargarConfig()
 
-    history.replaceState({ canastaco: 'base' }, '')
-    history.pushState({ canastaco: 'top' }, '')
+    history.replaceState({ mejor-precio: 'base' }, '')
+    history.pushState({ mejor-precio: 'top' }, '')
 
     const onPopState = (e) => {
-      if (e.state?.canastaco === 'base' || !e.state?.canastaco) {
+      if (e.state?.mejor-precio === 'base' || !e.state?.mejor-precio) {
         const pagina = $currentPage
 
         if (pagina === 'home' || pagina === 'login' || pagina === 'bloqueado') {
           if (mostrarAvisoSalir) return
           mostrarAvisoSalir = true
-          history.pushState({ canastaco: 'top' }, '')
+          history.pushState({ mejor-precio: 'top' }, '')
           clearTimeout(timerAvisoSalir)
           timerAvisoSalir = setTimeout(() => { mostrarAvisoSalir = false }, 3000)
         } else {
-          history.pushState({ canastaco: 'top' }, '')
+          history.pushState({ mejor-precio: 'top' }, '')
         }
       }
     }

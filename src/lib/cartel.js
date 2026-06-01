@@ -20,7 +20,7 @@ export async function generarTokenCartel(comercioId, direccion, codigoPublico) {
 export function construirUrlCartel(comercioId, token) {
   // La dirección NO va en la URL — se lee de Firestore al abrir el QR.
   // Esto evita problemas con caracteres especiales en query strings.
-  return `https://canastaco.netlify.app/comercio/${comercioId}?token=${token}`
+  return `https://mejor-precio.netlify.app/comercio/${comercioId}?token=${token}`
 }
 
 // ── Verificación (se usa en DetalleComercio.svelte al abrir QR) ────────────
@@ -81,12 +81,12 @@ export async function generarCartelPDF(comercio) {
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(28)
-  doc.text('Canasta', 16, 22)
+  doc.text('Mejor Precio', 16, 22)
 
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(28)
   doc.setTextColor(245, 163, 33)   // --c-accent
-  doc.text('.co', 16 + doc.getTextWidth('Canasta'), 22)
+  doc.text('.co', 16 + doc.getTextWidth('Mejor Precio'), 22)
 
   // Tagline en la franja
   doc.setFont('helvetica', 'normal')
@@ -126,7 +126,7 @@ export async function generarCartelPDF(comercio) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(13)
   doc.setTextColor(27, 107, 58)
-  doc.text('Este comercio publica\nsus precios en Canasta.co', colIzq, 82)
+  doc.text('Este comercio publica\nsus precios en Mejor Precio', colIzq, 82)
 
   // Descripción
   doc.setFont('helvetica', 'normal')
@@ -156,7 +156,7 @@ export async function generarCartelPDF(comercio) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.5)
   doc.setTextColor(27, 107, 58)
-  doc.text('canasta.co', colIzq, 134)
+  doc.text('mejorprecio.app', colIzq, 134)
 
   // ── QR ────────────────────────────────────────────────────────────────────
   // Marco del QR
@@ -194,7 +194,7 @@ export async function generarCartelPDF(comercio) {
   doc.setFontSize(6.5)
   doc.setTextColor(180, 200, 184)
   doc.text(
-    `Imprimí en color · ID: ${comercio.id.slice(0, 8).toUpperCase()} · canasta.co`,
+    `Imprimí en color · ID: ${comercio.id.slice(0, 8).toUpperCase()} · mejorprecio.app`,
     W / 2,
     H - 2,
     { align: 'center' }
