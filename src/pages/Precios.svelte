@@ -58,6 +58,8 @@
   let esOferta       = false
   let vencimiento    = ''
   let guardando      = false
+  let codigoBarrasActual = null  // código escaneado para asociar al nuevo producto
+  let desdeEscaner       = false // indica que el form se abrió desde escaneo sin nombre
 
   // ── Filtros vista ─────────────────────────────────────────────────────
   let filtroCategoria = ''
@@ -266,8 +268,6 @@
     // El componente ya muestra el error internamente
   }
 
-    let codigoBarrasActual = null  // código escaneado para asociar al nuevo producto
-  let desdeEscaner       = false // indica que el form se abrió desde escaneo sin nombre
 
   function onCodigoSinProducto(e) {
     const { codigoBarras } = e.detail

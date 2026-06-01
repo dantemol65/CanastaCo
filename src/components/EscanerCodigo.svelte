@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte'
+  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte'
   import {
     soportaBarcodeDetector,
     crearDetectorNativo,
@@ -154,6 +154,10 @@
     codigoLeido  = ''
     resultadoOFF = null
     estado       = 'escaneando'
+
+    // Esperar a que Svelte actualice el DOM y remonte el <video>
+    // antes de intentar reasignar el stream
+    await tick()
 
     // Reasignar el stream al video — el {#if} del template pudo haberlo desmontado
     // y el srcObject se pierde al remontar el elemento <video>
