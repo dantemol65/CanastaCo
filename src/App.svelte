@@ -47,21 +47,21 @@
     initAuth()
     cargarConfig()
 
-    history.replaceState({ mejor-precio: 'base' }, '')
-    history.pushState({ mejor-precio: 'top' }, '')
+    history.replaceState({ app: 'base' }, '')
+    history.pushState({ app: 'top' }, '')
 
     const onPopState = (e) => {
-      if (e.state?.mejor-precio === 'base' || !e.state?.mejor-precio) {
+      if (e.state?.app === 'base' || !e.state?.app) {
         const pagina = $currentPage
 
         if (pagina === 'home' || pagina === 'login' || pagina === 'bloqueado') {
           if (mostrarAvisoSalir) return
           mostrarAvisoSalir = true
-          history.pushState({ mejor-precio: 'top' }, '')
+          history.pushState({ app: 'top' }, '')
           clearTimeout(timerAvisoSalir)
           timerAvisoSalir = setTimeout(() => { mostrarAvisoSalir = false }, 3000)
         } else {
-          history.pushState({ mejor-precio: 'top' }, '')
+          history.pushState({ app: 'top' }, '')
         }
       }
     }
