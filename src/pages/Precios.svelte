@@ -1402,5 +1402,3 @@
   .eliminar-btn:hover { background: #FEE2E2; }
 
 </style>
-
-// ========================================
